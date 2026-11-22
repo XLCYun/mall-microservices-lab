@@ -10,6 +10,7 @@
     dialog = $('#dialog');
   const slots = new Map(),
     runs = new Map();
+  const appliedRanges = new WeakMap();
   const clone = (data) => JSON.parse(JSON.stringify(data));
   let id, index, scene, module, run;
   let playing = false,
@@ -491,6 +492,10 @@
       run.speed = speed;
       return;
     }
+    if (target.type === 'range' && appliedRanges.get(target) === target.value) {
+      appliedRanges.delete(target);
+      return;
+    }
     if (target.hasAttribute('data-key'))
       action(target.dataset.key, target.type === 'checkbox' ? target.checked : target.value, target);
   });
@@ -509,6 +514,11 @@
       const output = target.closest('label')?.querySelector('output');
       if (output)
         output.innerHTML = escape(target.value) + '<small>' + escape(target.dataset.unit || '') + '</small>';
+      // Touch WebKit can finish a slider gesture without a change event.
+      if (target.dataset.key && appliedRanges.get(target) !== target.value) {
+        appliedRanges.set(target, target.value);
+        action(target.dataset.key, target.value, target);
+      }
     }
   });
   dialog.addEventListener('click', (event) => {
