@@ -41,6 +41,11 @@ for (const name of artPaths) {
   html = html.replaceAll('./' + name, () => 'data:image/webp;base64,' + encoded);
 }
 await mkdir(path.join(root, 'dist'), { recursive: true });
+await build({
+  entryPoints: [path.join(root, 'src/phone-worker.js')],
+  outfile: path.join(root, 'dist/phone-worker.js'),
+  bundle: true, format: 'esm', target: 'es2020', minify: true
+});
 await writeFile(path.join(root, 'dist', 'index.html'), html);
 await writeFile(path.join(root, 'dist', '.nojekyll'), '');
-console.log('已生成 dist/index.html，可直接双击打开。');
+console.log('已生成 dist/index.html 和静态站点使用的 dist/phone-worker.js，可双击 HTML 离线演示。');

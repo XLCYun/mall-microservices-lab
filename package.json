@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "esbuild src/gateway-ui.jsx --bundle --jsx=automatic --format=iife --target=es2020 --outfile=src/assets/gateway-ui.js --servedir=src --serve=127.0.0.1:59011",
+    "dev": "node dev.mjs",
     "verify": "node verify.mjs",
     "build": "node build.mjs"
   },

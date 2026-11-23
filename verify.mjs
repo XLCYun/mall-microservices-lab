@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import {deploymentFrames} from './src/registry-deployment.js';
 import {lessonRecords} from './src/guided-runs.js';
+import { phonePath, verifyPhone } from './src/phone-endpoint.js';
 
 const host = vm.createContext({ console });
 host.window = host;
@@ -11,6 +12,11 @@ for (const file of ['core', 'request-flow', 'story', 'traffic', 'registry-frames
   vm.runInContext(source, host, { filename: file + '.js' });
 }
 const { scenes, story, workloads, requestBalls } = host.Lab;
+const phoneUrl = 'http://localhost/' + phonePath;
+const postPhone = body => verifyPhone(new Request(phoneUrl, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body
+}));
+host.Lab.phoneClient = { send: postPhone };
 assert.deepEqual(Array.from(host.Lab.topics, group => [group.label, Array.from(group.scenes, scene => scene.id)]), [
   ['微服务治理', ['registry','gateway','scale','resilience','mesh']], ['微服务测试', ['phone','contract']]
 ]);
@@ -59,8 +65,12 @@ for (const { id } of story) {
   first.time = 0;
   const baseline = JSON.stringify(first);
   const restored = JSON.parse(baseline);
-  advance(scene, first, 12);
-  advance(scene, restored, 12);
+  for (const state of [first, restored]) {
+    for (let i = 0; i < 12; i++) {
+      state.time++;
+      await scene.tick(state);
+    }
+  }
   assert.equal(JSON.stringify(first), JSON.stringify(restored), id + ' 重放应一致');
   assert.equal(scene.stats(first).length, 3);
   verifyPaths(scene.stage(first));
@@ -493,23 +503,73 @@ for (const target of ['gateway', 'product', 'review']) {
   assert.equal(retried.manualBatch.requests.filter(r => r.path.at(-1) === target).length, fault.retry.frame[target]);
 }
 const phone = scenes.phone.init();
-change(scenes.phone, phone, 'phone-add-preset');
-change(scenes.phone, phone, 'phone-all');
-assert.equal(scenes.phone.stats(phone)[2][1], 2);
+await change(scenes.phone, phone, 'phone-all');
+assert.equal(scenes.phone.counts(phone).passed, phone.rows.length);
 assert.equal(phone.manualBatch.requests.length, phone.rows.length);
-assert.equal(phone.manualBatch.requests.map(r => r.tones.at(-1)).join('/'), 'pass/stop/pass/stop');
+assert.ok(phone.manualBatch.requests.every(r => r.tones.at(-1) === 'pass'));
+for (const row of phone.rows) {
+  assert.deepEqual(JSON.parse(row.exchange.body), { phone: row.phone });
+  assert.equal(row.exchange.status, 200);
+  assert.deepEqual(JSON.parse(row.exchange.text), { valid: row.expected });
+}
+for (const raw of [' 13800000000', '13800000000 ', '13800000000\n', '１３８００００００００', '12800000000', '03800000000']) {
+  const response = await postPhone(JSON.stringify({ phone: raw }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { valid: false });
+}
+for (const invalid of ['{', '{}', '{"phone":13800000000}']) assert.equal((await postPhone(invalid)).status, 400);
+assert.equal((await verifyPhone(new Request(phoneUrl))).status, 405);
+assert.equal((await verifyPhone(new Request(phoneUrl, { method: 'POST', body: 'text' }))).status, 415);
+change(scenes.phone, phone, 'phone-expected-2', 'valid');
+assert.equal(scenes.phone.verdict(phone.rows[1]), '不符');
+change(scenes.phone, phone, 'phone-raw-2', '19900000000');
+assert.equal(phone.rows[1].exchange, null);
+await change(scenes.phone, phone, 'phone-run', 2);
+assert.equal(phone.rows[1].actual, true);
+assert.equal(scenes.phone.verdict(phone.rows[1]), '通过');
 verifyPaths(scenes.phone.stage(phone));
-for (const version of ['rename', 'extra']) {
-  const state = scenes.contract.init();
-  change(scenes.contract, state, 'contract-version', version);
-  change(scenes.contract, state, 'contract-run');
-  assert.equal(state.own.count, 3);
+const contract = scenes.contract;
+for (const [version, affected, selfChecks] of [['original', 0, 3], ['rename', 1, 3], ['extra', 0, 3], ['type', 1, 3], ['status', 2, 2]]) {
+  const state = contract.init();
+  change(contract, state, 'contract-version', version);
+  assert.equal(contract.responsePreview(state).replayed, false);
+  change(contract, state, 'contract-run');
+  assert.equal(state.own.count, selfChecks);
   const failed = Object.values(state.liveChecks).filter((check) => check.status === 'fail');
-  assert.equal(failed.length, version === 'rename' ? 1 : 0);
-  verifyPaths(scenes.contract.stage(state));
+  assert.equal(failed.length, affected);
+  assert.equal(contract.responsePreview(state).replayed, true);
+  assert.equal(contract.responsePreview(state).actual, state.providerChecks.order.actual);
+  verifyPaths(contract.stage(state));
   assert.equal(state.manualBatch.requests.length, 4);
   assert.equal(state.manualBatch.requests.filter(r => r.tones[0] === 'stop').length, failed.length);
 }
+// Each consumer can replay its own request. Switching the viewed contract must switch the receipt too.
+const editedContract = contract.init();
+change(contract, editedContract, 'contract-yaml', editedContract.drafts.order.replace('SKU-042', 'SKU-007'));
+change(contract, editedContract, 'contract-run');
+assert.equal(contract.responsePreview(editedContract).actual.body.stock, 0);
+change(contract, editedContract, 'contract-doc', 'product');
+assert.equal(contract.responsePreview(editedContract).actual.body.stock, 12);
+// Both editors are on screen. Edits and restores target their own file even when the other response is selected.
+const productYaml = editedContract.drafts.product;
+const orderYaml = editedContract.drafts.order;
+change(contract, editedContract, 'contract-doc', 'order');
+change(contract, editedContract, 'contract-yaml', { id: 'product', yaml: 'invalid' });
+assert.ok(editedContract.errors.product);
+assert.equal(editedContract.tab, 'product');
+assert.equal(editedContract.drafts.order, orderYaml);
+change(contract, editedContract, 'contract-doc', 'order');
+change(contract, editedContract, 'contract-restore', { id: 'product' });
+assert.equal(editedContract.drafts.product, productYaml);
+assert.equal(editedContract.errors.product, undefined);
+assert.equal(editedContract.drafts.order, orderYaml);
+change(contract, editedContract, 'contract-mode', 'provider');
+change(contract, editedContract, 'contract-version', 'rename');
+change(contract, editedContract, 'contract-run');
+assert.equal(editedContract.providerChecks.shared.status, 'fail');
+assert.equal(editedContract.consumerChecks.order.status, 'blocked');
+assert.equal(editedContract.consumerChecks.product.status, 'blocked');
+assert.equal(contract.responsePreview(editedContract).actual, editedContract.providerChecks.shared.actual);
 const mesh = scenes.mesh.init();
 assert.equal(mesh.rate, 50);
 advance(scenes.mesh, mesh);
@@ -735,4 +795,4 @@ assert.deepEqual([rules.applied.v2,rules.frame.v1,rules.frame.v2,rules.frame.tag
 assert.ok(business(rollbackRelease.frame().model.batch).every(p => p.destination === 'v1' && !p.tagged));
 assert.ok(rollbackRelease.frame().model.batch.requests.some(r => r.kind === 'control' && r.version === rules.applied.version));
 assert.equal(weightedRelease.frame().state.applied.v2, 100, '回滚只改变当前地图');
-console.log('课程分组、七个章节及治理地图通过验证，覆盖灰度请求头、权重、两种执行路径、回滚和重置。');
+console.log('七个章节通过验证，包括治理地图、手机号接口的 JSON 请求与响应、数据驱动断言和契约测试。');

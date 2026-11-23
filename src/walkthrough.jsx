@@ -13,25 +13,21 @@ function LiveVisual({playback, index, record}) {
   return <record.Visual record={record} frame={frame} />;
 }
 
-function StoryCard({playback, index}) {
-  const record = playback.records[index];
-  const {slide} = record;
-  const titleId = playback.sceneId + '-title-' + slide.id;
-  return <section id={playback.sceneId + '-story-' + slide.id} className="registry-story-slide"
+export function StoryCard({sceneId, chapter, slide, children}) {
+  const titleId = sceneId + '-title-' + slide.id;
+  return <section id={sceneId + '-story-' + slide.id} className="registry-story-slide"
     aria-labelledby={titleId} tabIndex={-1}>
     <div className="registry-story-copy">
-      <p className="registry-story-label">情景 {pad(slide.chapter ?? index + 1)}<span aria-hidden="true"> / </span>{slide.label}</p>
+      <p className="registry-story-label">情景 {pad(chapter)}<span aria-hidden="true"> / </span>{slide.label}</p>
       <h2 id={titleId}>{slide.title}</h2>
       <p className="registry-story-lead">{slide.lead}</p>
       {slide.bullets && <ul className="registry-story-steps lesson-bullets">
         {slide.bullets.map(([term, explanation]) => <li key={term}><strong>{term}</strong> {explanation}</li>)}
       </ul>}
-      <p className="registry-story-body">{slide.body}</p>
+      {slide.body && <p className="registry-story-body">{slide.body}</p>}
       {slide.steps && <ol className="registry-story-steps">{slide.steps.map(step => <li key={step}>{step}</li>)}</ol>}
     </div>
-    <div className="registry-story-visual">
-      {slide.live ? <LiveVisual playback={playback} index={index} record={record} /> : <record.Visual record={record} />}
-    </div>
+    <div className="registry-story-visual">{children}</div>
   </section>;
 }
 
@@ -125,7 +121,9 @@ export function Walkthrough({playback}) {
   return <section id={playback.sceneId + '-walkthrough'} className="scene-walkthrough"
     aria-label={window.Lab.story.find(s => s.id === playback.sceneId).short + '情景与模拟地图'}>
     {playback.records.map((record, index) => <React.Fragment key={record.id}>
-      <StoryCard playback={playback} index={index} />
+      <StoryCard sceneId={playback.sceneId} chapter={record.slide.chapter ?? index + 1} slide={record.slide}>
+        {record.slide.live ? <LiveVisual playback={playback} index={index} record={record} /> : <record.Visual record={record} />}
+      </StoryCard>
       <SimulationMap playback={playback} index={index} />
     </React.Fragment>)}
   </section>;

@@ -6,8 +6,8 @@
   const stubPath = ['consumer', 'stub'];
   const replayPath = ['verifier', 'inventory'];
   const roles = {
-    order: { name: '订单服务', field: 'stock', expects: '下单时读取库存数量' },
-    product: { name: '商品服务', field: 'available', expects: '商品页读取有货标记' }
+    order: { name: '订单服务', field: 'stock', type: 'number', expects: '读取可下单的库存数量' },
+    product: { name: '商品服务', field: 'available', type: 'boolean', expects: '显示商品是否有货' }
   };
   const versions = [
     ['original', '原始实现'],
@@ -19,30 +19,10 @@
   const versionNames = Object.fromEntries(versions);
   const modes = [['consumer', '消费者驱动'], ['provider', '提供者驱动']];
   const modeNames = Object.fromEntries(modes);
-  const stages = {
-    consumer: ['消费者制定契约', 'Stub 验证消费代码', '提供者重放请求'],
-    provider: ['提供者制定契约', '验证并发布 Stub', '消费者接入 Stub']
-  };
-  const descriptions = {
-    consumer: [
-      '订单和商品分别约定各自要读取的字段。可以单步观察这两份契约怎样验证库存服务。',
-      '两份契约已就绪。下一步用各自的 Stub 响应运行订单和商品的消费代码。',
-      '消费者测试已执行。下一步由库存服务重放通过测试的契约，核对实际响应。',
-      '本轮已结束。对照两位消费者的 Stub 结果和库存服务的重放结果，查看本次变更的影响。'
-    ],
-    provider: [
-      '库存服务制定一份公开契约。提供者先验证实现，两个消费者随后接入同一份 Stub。',
-      '公开契约已就绪。下一步用契约请求测试当前库存实现，通过后发布 Stub。',
-      '提供者已完成验证。两个消费者将在下一步尝试使用已发布的 Stub。',
-      '本轮已结束。查看提供者的发布结果，以及订单和商品能否处理公开契约的响应。'
-    ]
-  };
-
   const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   const emptyMap = () => Object.create(null);
   const kind = value => value === null ? 'null' : typeof value;
   const show = value => value === undefined ? '缺失' : JSON.stringify(value);
-  const escape = value => Lab.ui.escape(String(value));
 
   function makeYaml(id) {
     const fields = id === 'shared' ? people : [id];
@@ -443,7 +423,7 @@
 
   function init() {
     const s = {
-      time: 0, mode: 'consumer', version: 'original', tab: 'order', help: false,
+      time: 0, mode: 'consumer', version: 'original', tab: 'order',
       drafts: { order: makeYaml('order'), product: makeYaml('product'), shared: makeYaml('shared') },
       errors: {}
     };
@@ -540,24 +520,24 @@
       case 'contract-doc':
         if (people.includes(value)) s.tab = value;
         break;
-      case 'contract-yaml': {
-        const id = activeDoc(s);
-        if (s.drafts[id] !== String(value)) {
-          s.drafts[id] = String(value);
-          parseFor(s, id);
-          clearResults(s);
-        }
-        break;
-      }
+      case 'contract-yaml':
       case 'contract-restore': {
-        const id = activeDoc(s);
-        s.drafts[id] = makeYaml(id);
-        delete s.errors[id];
+        const id = value?.id ?? activeDoc(s);
+        if (!docIds(s).includes(id)) break;
+        if (s.mode === 'consumer') s.tab = id;
+        if (key === 'contract-restore') {
+          s.drafts[id] = makeYaml(id);
+          delete s.errors[id];
+          ctx?.notify('已恢复' + docName(id) + '的示例');
+        } else {
+          const yaml = value?.yaml ?? value;
+          if (typeof yaml !== 'string' || s.drafts[id] === yaml) break;
+          s.drafts[id] = yaml;
+          parseFor(s, id);
+        }
         clearResults(s);
-        ctx?.notify('已恢复' + docName(id) + '的示例');
         break;
       }
-      case 'contract-help': s.help = !s.help; break;
       case 'contract-next':
         if (s.phase === 3) clearResults(s);
         step(s, Lab.flow.manual(s));
@@ -584,115 +564,11 @@
     }
   }
 
-  function controls(s) {
-    const ui = Lab.ui;
-    return '<div class="ct-controls">' +
-      ui.select('contract-mode', '契约制定方式', s.mode, modes) +
-      ui.select('contract-version', '库存接口的实现', s.version, versions) +
-      '<div class="ct-control-actions">' + ui.button('contract-run', '运行完整流程', 'primary') +
-      ui.button('contract-next', s.phase === 3 ? '从头单步' : '下一步') + '</div></div>';
-  }
-
-  const statusNames = { pass: '通过', fail: '失败', invalid: '契约有误', blocked: '未执行' };
-
-  function badge(check, impact = false) {
-    if (!check) return '<span class="ct-badge ct-idle">待验证</span>';
-    const label = impact && check.status === 'pass' ? '可用' : impact && check.status === 'fail' ? '受影响' : statusNames[check.status];
-    return '<span class="ct-badge ct-' + check.status + '">' + label + '</span>';
-  }
-
-  function runRow(label, check, impact = false) {
-    const issues = check && check.issues?.length > 1
-      ? '<ul class="ct-issues">' + check.issues.slice(1).map(issue => '<li>' + escape(issue) + '</li>').join('') + '</ul>' : '';
-    return '<div class="ct-check"><div class="ct-check-title"><span>' + escape(label) + '</span>' +
-      badge(check, impact) + '</div>' + (check ? '<p>' + escape(check.note) + '</p>' + issues : '') + '</div>';
-  }
-
-  function flowView(s) {
-    const title = modeNames[s.mode] + '流程';
-    const steps = stages[s.mode].map((name, index) => {
-      const done = index + 1 <= s.phase;
-      const providerStep = s.mode === 'consumer' ? 2 : 1;
-      const checks = Object.values(index === providerStep ? s.providerChecks : s.consumerChecks);
-      const problem = done && (index === 0 ? docIds(s).some(id => s.errors[id]) :
-        checks.some(check => ['invalid', 'fail'].includes(check.status)) ||
-        (checks.some(check => check.status === 'blocked') && checks.some(check => check.status === 'pass')));
-      const gated = done && index > 0 && checks.length && checks.every(check => check.status === 'blocked');
-      const stateClass = !done ? '' : problem ? 'ct-problem' : gated ? 'ct-gated' : 'ct-done';
-      const mark = !done ? index + 1 : problem ? '!' : gated ? '—' : '&#10003;';
-      return '<li class="' + stateClass + '"' +
-        (s.phase === index + 1 ? ' aria-current="step"' : '') + '><span class="ct-step-num">' +
-        mark + '</span><span>' + name + '</span></li>';
-    }).join('');
-    let note = descriptions[s.mode][s.phase];
-    if (s.manual === 'consumer') note = '已用草稿 Stub 单独验证两个消费者。运行完整流程可查看本轮的契约发布结果。';
-    if (s.manual === 'provider') note = '已单独验证库存实现。左栏显示两个消费者接入当前实现时分别能否完成业务。';
-    if (s.phase === 1 && docIds(s).some(id => s.errors[id])) note = '契约存在语法错误。编辑器下方会列出原因，修正后可重新运行。';
-    if (s.mode === 'provider' && s.phase === 2 && s.providerChecks.shared?.status !== 'pass') {
-      note = '公开契约未通过验证。库存服务无法发布本轮 Stub，下一步可查看消费者的状态。';
-    }
-    return '<section class="ct-flow" aria-label="' + title + '"><div class="ct-flow-heading"><h3>' + title +
-      '</h3><span>' + s.phase + ' / 3 步</span></div><ol class="ct-steps">' + steps + '</ol><p>' + note + '</p></section>';
-  }
-
-  function consumerView(s) {
-    const cards = people.map(person => {
-      const role = roles[person];
-      return '<article class="ct-consumer"><h4>' + role.name + '<code>' + person + '</code></h4>' +
-        '<p class="ct-dependency">' + role.expects + ' <code>' + role.field + '</code></p>' +
-        runRow(s.stubSource || '契约 Stub', s.consumerChecks[person]) +
-        runRow('接入当前实现', s.liveChecks[person], true) + '</article>';
-    }).join('');
-    return '<section class="ct-column"><div class="ct-column-heading"><h3>消费者</h3><span>2 个调用方</span></div>' + cards +
-      '<div class="ct-column-foot">' + Lab.ui.button('contract-test-consumer', '用草稿验证消费者') +
-      '<p>对应 Stub Runner 加载的 WireMock 测试桩。消费者收到契约里的响应示例。</p></div></section>';
-  }
-
-  function helpView() {
-    return '<div class="ct-help"><p>编辑器支持 Spring Cloud Contract 的 HTTP YAML 子集。每层缩进两个空格。headers 和 body 使用单层字段。body 支持字符串、数字、布尔值和 null。</p>' +
-      '<p>在任一侧的 matchers.body 中定义规则。<code>by_type</code> 检查示例值的类型。<code>by_regex</code> 匹配完整字符串，支持字符组、<code>\\d</code>、<code>\\w</code>、<code>\\s</code>、点和重复次数。</p>' +
-      '<p><code>SKU-[0-9]{3}</code> 可以匹配 <code>SKU-042</code>。普通字段按值比较，实际响应可以包含额外字段。库存样例为 SKU-042（12 件）和 SKU-007（0 件）。</p></div>';
-  }
-
-  function editorView(s) {
-    const id = activeDoc(s);
-    const yaml = s.drafts[id];
-    const tabs = s.mode === 'consumer' ? '<div class="ct-tabs" role="group" aria-label="选择契约">' + people.map(person =>
-      '<button type="button" data-act="contract-doc" data-value="' + person + '" aria-pressed="' + (id === person) + '">' +
-      (person === 'order' ? '订单' : '商品') + '契约' + (s.errors[person] ? ' !' : '') + '</button>').join('') + '</div>' :
-      '<div class="ct-public">库存服务公开契约</div>';
-    const error = s.errors[id];
-    return '<section class="ct-column ct-editor"><div class="ct-column-heading"><h3>契约</h3><span>YAML</span></div>' +
-      tabs + '<label class="ct-code-label" for="ct-yaml">' + escape(id + '.yml') + '<span>可编辑</span></label>' +
-      '<textarea id="ct-yaml" data-key="contract-yaml" aria-label="' + docName(id) + ' YAML" aria-describedby="ct-diagnostic" aria-invalid="' +
-      Boolean(error) + '" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" maxlength="16384" rows="16">\n' +
-      escape(yaml) + '</textarea><p id="ct-diagnostic" class="ct-diagnostic' + (error ? ' ct-error' : '') + '">' +
-      (error ? escape(error) : '语法通过 · ' + yaml.split(/\r\n?|\n/).length + ' 行') +
-      '</p><div class="ct-editor-tools"><button type="button" data-act="contract-help" aria-expanded="' + s.help +
-      '">' + (s.help ? '收起语法说明' : '查看语法说明') + '</button><button type="button" data-act="contract-restore">恢复当前示例</button></div>' +
-      (s.help ? helpView() : '') + '</section>';
-  }
-
-  function providerView(s) {
-    const id = activeDoc(s);
-    const replay = s.providerChecks[id];
-    const request = replay?.request || standardRequest();
-    const actual = replay?.actual || inventory(request, s.version);
-    const title = replay?.actual ? docName(id) + '重放' : '标准查询';
-    const ownLabel = s.own ? '接口自测 · ' + s.own.count + '/3' : '接口自测';
-    const rows = docIds(s).map(docId => runRow(docName(docId), s.providerChecks[docId])).join('');
-    return '<section class="ct-column"><div class="ct-column-heading"><h3>提供者</h3><code>inventory</code></div>' +
-      '<div class="ct-preview"><div class="ct-preview-title"><span>' + title + '</span><code>HTTP ' + actual.status + '</code></div>' +
-      '<p class="ct-endpoint">' + escape(request.method + ' ' + request.url) + '</p><pre aria-label="库存服务实际响应">' +
-      escape(JSON.stringify(actual.body, null, 2)) + '</pre></div><div class="ct-provider-checks">' +
-      runRow(ownLabel, s.own) + rows + '</div><div class="ct-column-foot">' +
-      Lab.ui.button('contract-test-provider', '重放请求验证提供者') +
-      '<p>Verifier 重放契约。接口自测另外检查 HTTP 200、SKU 回显和本版数量字段。</p></div></section>';
-  }
-
-  function workspace(s) {
-    return '<div class="ct-workbench">' + flowView(s) + '<div class="ct-grid">' +
-      consumerView(s) + editorView(s) + providerView(s) + '</div></div>';
+  function responsePreview(s) {
+    const replay = s.providerChecks[activeDoc(s)];
+    if (replay?.actual) return { request: replay.request, actual: replay.actual, replayed: true };
+    const request = standardRequest();
+    return { request, actual: inventory(request, s.version), replayed: false };
   }
 
   function calledChecks(checks, pending) {
@@ -706,7 +582,7 @@
       nodes: [
         {id: 'consumer', role: 'client', label: '消费者', sub: '订单 / 商品'},
         {id: 'stub', role: 'product', label: '契约 Stub', sub: calledChecks(s.consumerChecks, stubStatus)},
-        {id: 'verifier', role: 'control', label: 'Verifier', sub: calledChecks(s.providerChecks, '等待重放')},
+        {id: 'verifier', role: 'control', label: '契约验证器', sub: calledChecks(s.providerChecks, '等待重放')},
         {id: 'inventory', role: 'inventory', label: '库存服务', sub: versionNames[s.version].split(' · ')[0]}
       ],
       edges: [stubPath, replayPath].map(([from, to]) => ({from, to, kind: 'flow', weight: 1})),
@@ -732,5 +608,8 @@
     ];
   }
 
-  Lab.scenes.contract = { init, tick, act, controls, workspace, stage, stats };
+  Lab.scenes.contract = {
+    init, tick, act, stage, stats, responsePreview, impacted,
+    people, roles, versions, modes, activeDoc, docName
+  };
 })();

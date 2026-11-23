@@ -58,7 +58,13 @@
     const supported = Lab.guides.supports(id);
     const guided = showingGuide();
     const host = $('#walkthrough-host');
+    const testing = topic.id === 'testing';
     document.body.classList.toggle('registry-scene', id === 'registry');
+    document.body.classList.toggle('phone-scene', id === 'phone');
+    document.body.classList.toggle('testing-scene', testing);
+    $('#testing-overview').hidden = !testing;
+    $('#testing-workspace').hidden = !testing;
+    $('.episode-nav').hidden = testing;
     $('#lesson-toolbar').hidden = !supported;
     $('#guide-tools').hidden = !guided;
     $('[data-shell="show-guide"]').setAttribute('aria-pressed', String(guided));
@@ -214,7 +220,7 @@
       preview.speed = rate;
     }
     for (const flight of manualFlights) retime(flight, manualSpeed());
-    if (stepPreview) retime(stepPreview, module.workspace ? manualSpeed() : speed);
+    if (stepPreview) retime(stepPreview, topic.id === 'testing' ? manualSpeed() : speed);
     transport();
   }
   function transport() {
@@ -228,7 +234,10 @@
       transport: $('#transport'),
       inline: $('#stage-inline-controls'),
       side: $('#gateway-controls'),
-      state: id === 'gateway' ? run.state : null,
+      sceneId: id,
+      state: run.state,
+      overviewHost: $('#testing-overview'),
+      workbenchHost: $('#testing-workspace'),
       playing, speed, timeText: clock(run.state.time),
       onAction: action,
       onShell: (command) => shell[command]?.(),
@@ -238,24 +247,21 @@
   function render(force = false) {
     if (showingGuide()) return;
     const s = run.state;
-    const work = Boolean(module.workspace);
-    $('#stage-card').classList.toggle('workbench', work);
+    $('#stage-card').classList.toggle('workbench', topic.id === 'testing');
     $('#canvas-box').hidden = !module.stage;
-    $('#workspace').hidden = !work;
-    if (work) fragment($('#workspace'), module.workspace(s), force);
     if (module.stage) {
       run.model = module.stage(s);
       syncPreviews(run.model, force);
       const legend = run.model.legend || {};
       const hasControl = run.model.edges.some(edge => edge.kind === 'control');
       const items = id === 'mesh' ? guideLegends.mesh : [
-        ...(id === 'contract' ? [] : [['waiting', work ? '提交' : '入站']]),
+        ...(id === 'contract' ? [] : [['waiting', id === 'phone' ? '提交' : '入站']]),
         ['passed', legend.pass || (id === 'gateway' ? '放行' : '转发')],
         ['rejected', legend.stop || (id === 'gateway' || id === 'scale' ? '拦截' : '调用失败')],
         ...(id === 'registry' ? [['heartbeat','心跳']] : []),
         ...(hasControl ? [['control-ball', id === 'registry' ? '注册与名单更新' : '控制消息']] : [])
       ];
-      fragment($('#legend'), '<strong>' + (work ? '1 球 = 1 次验证调用' : '1 球 = 1 个请求') + '</strong>' + legendMarkup(items));
+      fragment($('#legend'), '<strong>' + (topic.id === 'testing' ? '1 球 = 1 次验证调用' : '1 球 = 1 个请求') + '</strong>' + legendMarkup(items));
       canvas.setAttribute(
         'aria-label',
         scene.stage +
@@ -268,7 +274,7 @@
     $('#stage-inline-controls').hidden = !gateway;
     $('#gateway-controls').hidden = !gateway;
     $('#scene-controls').hidden = gateway;
-    if (!gateway) fragment($('#scene-controls'), module.controls(s), force);
+    if (!gateway) fragment($('#scene-controls'), module.controls?.(s), force);
     const detail = module.detail?.(s) || '';
     $('#detail-card').hidden = !detail.trim();
     fragment($('#scene-detail'), detail, force);
@@ -294,8 +300,10 @@
     transport();
   }
   function tick() {
-    run.state.time++;
-    module.tick?.(run.state);
+    const state = run.state;
+    state.time++;
+    const pending = module.tick?.(state);
+    if (pending?.then) pending.then(sceneContext(run, state).refresh);
     render();
   }
   function animation(now) {
@@ -459,7 +467,7 @@
         const tail = previousBatch ? Lab.requestBalls.batchEnd(previousBatch) - 1 : 0;
         const end = Math.min(1, Math.max(tail, Lab.requestBalls.batchEnd(batch)));
         if (end > 0) {
-          stepPreview = {batch, start: performance.now(), end, speed: module.workspace ? manualSpeed() : speed};
+          stepPreview = {batch, start: performance.now(), end, speed: topic.id === 'testing' ? manualSpeed() : speed};
           drawNow();
         }
       }
@@ -475,6 +483,14 @@
       if (index > 0) go(topic.scenes[index - 1].id);
     },
   };
+  function sceneContext(activeRun, state) {
+    const current = () => run === activeRun && run.state === state;
+    return {
+      current, download, sceneTime: state.time + fraction,
+      notify: message => { if (current()) notify(message); },
+      refresh: () => { if (current()) render(); },
+    };
+  }
   async function action(key, value, target) {
     const activeRun = run,
       state = run.state;
@@ -485,18 +501,10 @@
     if (id === 'gateway' && ['tracePass', 'trace429', 'traceNext', 'endTrace', 'sendProbe', 'sendOrder', 'replay'].includes(key)) {
       run.replay = null;
     }
-    const ctx = {
-      notify: (message) => {
-        if (run === activeRun && run.state === state) notify(message);
-      },
-      download,
-      sceneTime: state.time + fraction,
-      refresh: () => {
-        if (run === activeRun && run.state === state) render();
-      },
-    };
+    const ctx = sceneContext(activeRun, state);
     try {
-      await module.act?.(state, key, value, target, ctx);
+      const pending = module.act?.(state, key, value, target, ctx);
+      if (pending?.then) await pending;
     } catch (error) {
       ctx.notify('这次操作未完成：' + (error?.message || '请重试'));
       console.error(error);

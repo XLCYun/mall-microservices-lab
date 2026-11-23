@@ -53,6 +53,7 @@
       <div id="walkthrough-host" hidden></div>
       <div id="scene-studio" class="studio">
         <div class="main-col">
+          <div id="testing-overview" hidden></div>
           <section id="stage-card" class="stage-card" aria-labelledby="stage-title">
             <div class="stage-head">
               <h2><span data-icon="layers"></span><span id="stage-title">服务拓扑</span></h2>
@@ -62,10 +63,10 @@
               <canvas id="topology" role="img" aria-label="服务拓扑与流量动画">可从运行明细查看节点和请求分布。</canvas>
               <div class="stage-legend" id="legend"></div>
             </div>
-            <div id="workspace" class="workspace" hidden></div>
             <div id="stage-inline-controls" class="stage-inline-controls" data-gateway-ui hidden></div>
             <div class="transport" id="transport" data-gateway-ui></div>
           </section>
+          <div id="testing-workspace" hidden></div>
           <div class="metrics" id="metrics" aria-label="当前指标"></div>
           <section id="detail-card" class="paper-card detail-card">
             <div class="section-title">
@@ -93,7 +94,7 @@
           </section>
         </aside>
       </div>
-      <div class="episode-nav">
+      <div class="episode-nav" hidden>
         <span id="lesson-pages"></span>
         <div>
           <button type="button" class="prev" data-shell="prev">上一幕</button

@@ -4,6 +4,9 @@ import { createRoot } from 'react-dom/client';
 import { guides } from './lesson-guides.jsx';
 import { GatewayLimit, RangeField } from './gateway-inputs.jsx';
 import { playbackRates } from './walkthrough-player.js';
+import { PhoneOverview, PhoneWorkspace } from './phone-workspace.jsx';
+import { ContractOverview, ContractWorkspace } from './contract-workspace.jsx';
+import { sendPhone } from './phone-client.js';
 
 const playbackSpeeds = [...playbackRates, 2, 4];
 
@@ -217,14 +220,22 @@ function Player({ playing, speed, timeText, onShell, onSpeed }) {
   );
 }
 
-function SimulationControls({ inline, side, state, playing, speed, timeText, onAction, onShell, onSpeed }) {
+const testingViews = {
+  phone: { Overview: PhoneOverview, Workspace: PhoneWorkspace },
+  contract: { Overview: ContractOverview, Workspace: ContractWorkspace }
+};
+
+function SimulationControls({ inline, side, sceneId, state, overviewHost, workbenchHost, playing, speed, timeText, onAction, onShell, onSpeed }) {
+  const view = testingViews[sceneId];
   return (
     <>
       <Player playing={playing} speed={speed} timeText={timeText} onShell={onShell} onSpeed={onSpeed} />
-      {state && inline && createPortal(
+      {view && createPortal(<view.Overview state={state} onAction={onAction} />, overviewHost)}
+      {view && createPortal(<view.Workspace state={state} onAction={onAction} />, workbenchHost)}
+      {sceneId === 'gateway' && inline && createPortal(
         <GatewayLimit value={state.limit} onAction={onAction} />, inline, 'gateway-limit'
       )}
-      {state && side && createPortal(
+      {sceneId === 'gateway' && side && createPortal(
         <GatewaySidebar state={state} onAction={onAction} />, side, 'gateway-sidebar'
       )}
     </>
@@ -248,4 +259,5 @@ function render(props) {
 }
 
 window.Lab.gatewayUI = { render, unmount };
+window.Lab.phoneClient = { send: sendPhone };
 window.Lab.guides = guides;

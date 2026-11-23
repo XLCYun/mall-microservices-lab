@@ -430,17 +430,13 @@ p {
   color: #222;
   background: #fff;
 }
-.workspace {
-  color: var(--ink);
-  background: #fcfcfe;
-  padding: 18px;
-  min-width: 0;
-}
+.testing-scene #scene-studio { display: block; }
+.testing-scene #scene-studio .side-col, .testing-scene #metrics { display: none; }
 .stage-card.workbench .stage-head {
   padding-bottom: 4px;
 }
 .stage-card.workbench .canvas-box {
-  height: clamp(132px, 10.5vw, 161px);
+  height: clamp(160px, 14vw, 200px);
 }
 .metrics {
   display: grid;
@@ -574,7 +570,6 @@ select:not([multiple]) {
   background-position: right 10px center;
 }
 :is(#scene-controls, #gateway-controls) select:not([multiple]),
-.workspace select:not([multiple]),
 #scene-detail select:not([multiple]) {
   background-color: #fff;
   color: #363246;
@@ -680,7 +675,6 @@ input[type='range']::-moz-range-thumb {
 }
 :is(#scene-controls, #gateway-controls) button,
 #scene-detail button,
-.workspace .control-button,
 .btn-std {
   display: inline-flex;
   align-items: center;
@@ -929,9 +923,6 @@ input[type='text'] {
   .transport button {
     padding: 7px 8px;
   }
-  .workspace {
-    padding: 12px;
-  }
   .metrics {
     padding: 13px 0;
   }
@@ -1039,9 +1030,6 @@ input[type='text'] {
   }
   .footer {
     font-size: 12px;
-  }
-  .workspace {
-    padding: 10px;
   }
 }
 @media (max-width: 390px) {
