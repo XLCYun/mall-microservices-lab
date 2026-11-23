@@ -1,0 +1,17 @@
+{
+  "name": "mall-microservices-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "esbuild src/gateway-ui.jsx --bundle --jsx=automatic --format=iife --target=es2020 --outfile=src/assets/gateway-ui.js --servedir=src --serve=127.0.0.1:59011",
+    "verify": "node verify.mjs",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

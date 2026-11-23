@@ -1,7 +1,9 @@
 (() => {
   'use strict';
 
-  const {range, select, toggle, button, escape} = window.Lab.ui;
+  const lab = window.Lab;
+  const {range, select, toggle, button, escape} = lab.ui;
+  const {batches} = lab.flow;
   const modes = [['config', '发布降级配置'], ['breaker', '自动熔断'], ['retry', '多层重试']];
   const namespaces = [['prod', '生产 prod'], ['test', '测试 test'], ['dev', '开发 dev']];
   const ruleNames = {slow: '慢调用比例', error: '异常比例'};
@@ -13,7 +15,7 @@
   const limits = {
     delay: [20, 1600], errorRate: [0, 100], timeout: [50, 2000], retries: [0, 3],
     interval: [0, 500], maxRT: [50, 1200], threshold: [5, 95], window: [1, 20],
-    minRequests: [1, 40], openSeconds: [1, 15], rate: [0, 30]
+    minRequests: [1, 40], openSeconds: [1, 15], rate: [0, 50]
   };
   const ruleParameters = ['maxRT', 'threshold', 'window', 'minRequests', 'openSeconds'];
   const clip = (value, min, max) => Math.min(max, Math.max(min, Math.round(Number(value) || 0)));
@@ -21,7 +23,22 @@
   const active = s => s.spaces[s.namespace];
   const copyRule = rule => ({...rule});
   const productId = number => 'product-' + String(number).padStart(2, '0');
-  const productLabel = id => id.replace(/^product-(\d+)$/, '商品 $1');
+  const productLabel = id => id.replace(/^product-(\d+)$/, '商品服务器 $1');
+  const instanceNodeId = instance => 'instance-' + instance.id;
+  const inventoryOffset = lab.flow.timing.landing(['neutral', 'pass']);
+  const reviewOffset = inventoryOffset + 0.01;
+  const retrySpacing = s => lab.flow.timing.travel.stop + 0.01 * s.interval / limits.interval[1];
+
+  function clearBatches(owner) {
+    owner.batch = null;
+    owner.previousBatch = null;
+    owner.manualBatch = null;
+  }
+
+  function configPacket(batch, at, instance) {
+    lab.flow.add(batch, at, ['config', instanceNodeId(instance)], ['control'],
+      {kind: 'control', instance: instance.id, version: instance.version});
+  }
 
   function random(holder) {
     holder.seed = (Math.imul(holder.seed, 1664525) + 1013904223) >>> 0;
@@ -72,7 +89,7 @@
       seed: 202642, rate: 6, delay: 400, errorRate: 0, timeout: 500, retries: 0, interval: 100,
       strategy: 'slow', maxRT: 250, threshold: 50, window: 5, minRequests: 6, openSeconds: 4,
       fallback: true, retry: {clientRetries: 1, gatewayRetries: 1, productRetries: 1,
-        failure: 100, seed: 4217, frame: retryCounts(), total: retryCounts()}
+        failure: 100, failFirstOnly: false, seed: 4217, frame: retryCounts(), total: retryCounts()}
     };
   }
 
@@ -83,7 +100,19 @@
     const names = [...new Set(ids.map(id => typeof id === 'number' ? productId(id) : id)
       .filter(id => typeof id === 'string' && id.length))];
     const previous = space.instances;
-    space.instances = names.map(id => previous.find(instance => instance.id === id) || newInstance(space, id));
+    const added = [];
+    space.instances = names.map(id => {
+      const existing = previous.find(instance => instance.id === id);
+      if (existing) return existing;
+      const instance = newInstance(space, id);
+      added.push(instance);
+      return instance;
+    });
+    if (previous.some(instance => !names.includes(instance.id))) clearBatches(space);
+    if (added.length) {
+      const batch = lab.flow.manual(space);
+      added.forEach((instance, index) => configPacket(batch, index / added.length * 0.5, instance));
+    }
     if (!names.includes(space.target)) space.target = 'auto';
     if (!names.includes(space.scope)) space.scope = 'all';
     const largestId = names.reduce((n, id) => Math.max(n, Number((id.match(/(\d+)$/) || [])[1]) || 0), 0);
@@ -109,13 +138,15 @@
     addLog(space, s.time, '向' + scope + '发布 v' + rule.version + '，' + (rule.skip ? '跳过' : '加载') + '评论。');
   }
 
-  function refreshConfig(space, instance, time, boot) {
+  function refreshConfig(space, instance, time, boot, batch) {
     const rule = currentConfig(space, instance.id);
+    const fetched = !boot || instance.appliedAt === null || instance.version !== rule.version;
     instance.version = rule.version;
     instance.skip = rule.skip;
     instance.pending = null;
     instance.readyAt = null;
     instance.appliedAt = time;
+    if (fetched) configPacket(batch, 0.01 * batch.requests.length, instance);
     addLog(space, time, instance.id + (boot ? ' 读取 v' : ' 应用 v') + rule.version
       + (boot ? ' 后开始接流量。' : (rule.skip ? '，开始跳过评论。' : '，恢复加载评论。')));
   }
@@ -180,7 +211,7 @@
     }
   }
 
-  function reviewRequest(s, space, instance, result) {
+  function reviewRequest(s, space, instance, result, batch, entry) {
     const guarded = s.mode === 'breaker';
     for (let attempt = 0; attempt <= s.retries; attempt++) {
       const breaker = instance.breaker;
@@ -203,6 +234,9 @@
       if (guarded) recordAttempt(s, space, instance, elapsed, timeout || error);
       if (wasProbe) result.probe = true;
       result.reason = timeout ? 'timeout' : error ? 'error' : 'full';
+      lab.flow.add(batch, entry.at + reviewOffset + attempt * retrySpacing(s), [instanceNodeId(instance), 'review'],
+        [timeout || error ? 'stop' : 'pass'], {kind: 'review', parent: entry.index, attempt: attempt + 1,
+          probe: wasProbe, code: timeout ? 504 : error ? 500 : 200, elapsedMs: elapsed});
       if (result.reason === 'full' || wasProbe) return;
     }
   }
@@ -213,7 +247,7 @@
     return result.reason === 'full' ? 'HTTP 200 · 含评论' : 'HTTP 200 · 详情和库存';
   }
 
-  function sendProduct(s, space, requestedId) {
+  function sendProduct(s, space, requestedId, batch, at) {
     const ready = space.instances.filter(instance => instance.readyAt === null);
     let instance;
     if (requestedId && requestedId !== 'auto') {
@@ -225,9 +259,13 @@
     const result = {instance: instance ? instance.id : '', version: instance ? instance.version : null,
       reason: 'unavailable', status: 503, rt: instance ? 40 : 5, calls: 0, retries: 0, timeouts: 0,
       errors: 0, probe: false};
+    const entry = lab.flow.add(batch, at, instance ? ['client', 'gateway', instanceNodeId(instance)] : ['client', 'gateway'],
+      instance ? ['neutral', 'pass'] : ['stop'], {kind: 'entry', instance: result.instance, version: result.version});
     if (instance) {
+      lab.flow.add(batch, at + inventoryOffset, [instanceNodeId(instance), 'inventory'], ['pass'],
+        {kind: 'inventory', parent: entry.index, code: 200});
       if (instance.skip) result.reason = 'manual';
-      else reviewRequest(s, space, instance, result);
+      else reviewRequest(s, space, instance, result, batch, entry);
       if (result.reason === 'full' || result.reason === 'manual' || s.fallback) result.status = 200;
       else if (result.reason === 'timeout') result.status = 504;
       else if (result.reason === 'error') result.status = 502;
@@ -238,6 +276,8 @@
       instance.frameFailures += result.timeouts + result.errors;
       instance.last = result;
     }
+    entry.code = result.status;
+    entry.outcome = result.reason;
     space.last = result;
     for (const count of [space.frame, space.total]) {
       count.requests++;
@@ -253,46 +293,69 @@
   }
 
   // Each caller retries only after its immediate downstream has exhausted its own attempts.
-  function layeredRequest(retry) {
+  function layeredRequest(retry, batch) {
     const counts = retryCounts();
+    const legs = [];
     counts.entrance = 1;
-    function callReview() {
-      counts.review++;
-      return random(retry) * 100 >= retry.failure;
+    function leg(from, to, tone, attempt, parent) {
+      const item = {from, to, tone, attempt, parent, number: legs.length + 1};
+      legs.push(item);
+      return item;
     }
-    function attempt(retries, call) {
-      for (let i = 0; i <= retries; i++) if (call()) return true;
+    function callReview(ordinal, parent) {
+      counts.review++;
+      const ok = retry.failFirstOnly ? counts.review > 1 : random(retry) * 100 >= retry.failure;
+      const item = leg('product', 'review', ok ? 'pass' : 'stop', ordinal, parent);
+      item.code = ok ? 200 : 500;
+      return ok;
+    }
+    function attempt(retries, call, parent) {
+      for (let i = 1; i <= 1 + retries; i++) if (call(i, parent)) return true;
       return false;
     }
-    function callProduct() {
+    function callProduct(ordinal, parent) {
       counts.product++;
-      return attempt(retry.productRetries, callReview);
+      const item = leg('gateway', 'product', 'pass', ordinal, parent);
+      const ok = attempt(retry.productRetries, callReview, item.number);
+      item.code = ok ? 200 : 502;
+      return ok;
     }
-    function callGateway() {
+    function callGateway(ordinal) {
       counts.gateway++;
-      return attempt(retry.gatewayRetries, callProduct);
+      const item = leg('client', 'gateway', 'neutral', ordinal, null);
+      const ok = attempt(retry.gatewayRetries, callProduct, item.number);
+      item.code = ok ? 200 : 502;
+      return ok;
     }
     if (attempt(retry.clientRetries, callGateway)) counts.successes++;
+    // Keep the actual call order within one display second, even when every layer retries.
+    legs.forEach((item, index) => lab.flow.add(batch, index / legs.length * 0.96, [item.from, item.to], [item.tone],
+      {kind: item.to, parent: item.parent, attempt: item.attempt, code: item.code}));
     retry.frame = counts;
     for (const key of Object.keys(counts)) retry.total[key] += counts[key];
   }
 
   function tickResilience(s) {
     for (const space of Object.values(s.spaces)) {
+      const batch = lab.flow.begin(space, s.time);
       space.frame = counters();
       for (const instance of space.instances) {
         instance.frameHits = 0;
         instance.frameCalls = 0;
         instance.frameFailures = 0;
-        if (instance.readyAt !== null && instance.readyAt <= s.time) refreshConfig(space, instance, s.time, true);
+        if (instance.readyAt !== null && instance.readyAt <= s.time) refreshConfig(space, instance, s.time, true, batch);
         else if (instance.pending && instance.pending.at !== null && instance.pending.at <= s.time) {
-          refreshConfig(space, instance, s.time, false);
+          refreshConfig(space, instance, s.time, false, batch);
         }
         advanceBreaker(s, space, instance);
       }
     }
-    if (s.mode === 'retry') layeredRequest(s.retry);
-    else for (let i = 0; i < s.rate; i++) sendProduct(s, active(s));
+    if (s.mode === 'retry') layeredRequest(s.retry, lab.flow.begin(s.retry, s.time));
+    else {
+      const space = active(s);
+      // Late child calls stay with their entry's batch and finish in the following second.
+      for (let i = 0; i < s.rate; i++) sendProduct(s, space, 'auto', space.batch, i / s.rate);
+    }
   }
 
   function resetBreakers(s) {
@@ -310,9 +373,16 @@
       return;
     }
     if (key === 'mode' && modes.some(([mode]) => mode === value)) {
-      if (s.mode !== value) resetBreakers(s);
+      if (s.mode !== value) {
+        resetBreakers(s);
+        for (const owner of [...Object.values(s.spaces), s.retry]) clearBatches(owner);
+      }
       s.mode = value;
     } else if (key === 'namespace' && namespaces.some(([name]) => name === value)) {
+      if (s.namespace !== value) {
+        space.manualBatch = null;
+        s.spaces[value].manualBatch = null;
+      }
       s.namespace = value;
     } else if (key === 'draft') {
       space.draft = Boolean(value);
@@ -331,18 +401,21 @@
       let id;
       do { id = productId(space.nextId++); } while (space.instances.some(item => item.id === id));
       const instance = newInstance(space, id, s.time + 1);
+      instance.appliedAt = s.time;
       space.instances.push(instance);
+      configPacket(lab.flow.manual(space), 0, instance);
       addLog(space, s.time, id + ' 启动，先读取 v' + instance.version + '。');
       ctx.notify(id + ' 已读取 v' + instance.version + '，下一步开始接流量。');
     } else if (key === 'restart') {
       const instance = space.instances.find(i => i.id === space.target) || space.instances[0];
       if (!instance) return;
       instance.readyAt = s.time + 1;
+      instance.appliedAt = null;
       instance.breaker = newBreaker();
       addLog(space, s.time, instance.id + ' 重启，已暂停接流量。');
       ctx.notify(instance.id + ' 将在启动时重新读取配置。');
     } else if (key === 'request') {
-      const result = sendProduct(s, space, space.target);
+      const result = sendProduct(s, space, space.target, lab.flow.manual(space), 0);
       ctx.notify((result.instance ? result.instance + ' · ' : '') + responseLabel(result) + ' · ' + result.rt + ' ms');
     } else if (key === 'strategy' && Object.prototype.hasOwnProperty.call(ruleNames, value)) {
       if (value !== s.strategy) resetBreakers(s);
@@ -352,9 +425,10 @@
     } else if (['clientRetries', 'gatewayRetries', 'productRetries'].includes(key)) {
       s.retry[key] = clip(value, 0, 3);
     } else if (key === 'layerFailure') {
-      s.retry.failure = clip(value, 0, 100);
+      s.retry.failFirstOnly = value === 'first-only';
+      s.retry.failure = s.retry.failFirstOnly ? 0 : clip(value, 0, 100);
     } else if (key === 'layerRequest') {
-      layeredRequest(s.retry);
+      layeredRequest(s.retry, lab.flow.manual(s.retry));
       ctx.notify('1 笔入口请求触发了 ' + s.retry.frame.review + ' 次评论调用。');
     }
   }
@@ -432,27 +506,29 @@
   }
   const controlEdge = (from, to, weight = 0.35) => ({from, to, kind: 'control', weight});
 
-  function stageResilience(s) {
+  function stageResilience(s, {showNamespace = true} = {}) {
     if (s.mode === 'retry') {
       const f = s.retry.frame;
       const lastLeg = flow('product', 'review', f.review, f.review);
       if (f.review && !f.successes) lastLeg.kind = 'blocked';
+      const reviewDown = s.retry.failFirstOnly ? f.review > 0 && !f.successes : s.retry.failure === 100;
       return {nodes: [node('client', 'client', '买家', f.entrance + ' 笔请求'), node('gateway', 'gateway', '网关', f.gateway + ' 次调用'),
-        node('product', 'product', '商品服务', f.product + ' 次调用'), node('review', 'review', '评论服务', f.review + ' 次调用', s.retry.failure === 100 ? 'down' : 'up')],
-      edges: [flow('client', 'gateway', f.gateway, f.review), flow('gateway', 'product', f.product, f.review), lastLeg]};
+        node('product', 'product', '商品服务', f.product + ' 次调用'), node('review', 'review', '评论服务', f.review + ' 次调用', reviewDown ? 'down' : 'up')],
+      edges: [flow('client', 'gateway', f.gateway, f.review), flow('gateway', 'product', f.product, f.review), lastLeg],
+      ...batches(s.retry, 'resilience/retry')};
     }
     const space = active(s);
     const f = space.frame;
     const nodes = [node('client', 'client', '买家', f.requests + ' 笔请求'), node('gateway', 'gateway', '网关', '商品详情路由'),
-      node('config', 'config', '配置中心', s.namespace + ' · v' + space.version),
+      node('config', 'config', '配置中心', (showNamespace ? s.namespace + ' · ' : '') + 'v' + space.version),
       node('inventory', 'inventory', '库存服务', f.inventory + ' 次调用'),
       node('review', 'review', '评论服务', f.calls + ' 次调用', s.errorRate === 100 ? 'down' : s.delay > s.maxRT ? 'slow' : 'up')];
     const edges = [flow('client', 'gateway', f.requests, f.requests)];
-    space.instances.forEach((i, index) => {
-      const id = 'instance-' + index;
+    space.instances.forEach(i => {
+      const id = instanceNodeId(i);
       const branching = i.skip || (s.mode === 'breaker' && i.breaker.state === 'OPEN');
       const label = i.readyAt !== null ? '启动中' : s.mode === 'breaker' ? breakerNames[i.breaker.state] : i.skip ? '跳过评论' : '加载评论';
-      const status = i.readyAt !== null || i.breaker.state === 'HALF_OPEN' ? 'pending' : 'up';
+      const status = i.readyAt !== null ? 'pending' : 'up';
       nodes.push(node(id, 'product', productLabel(i.id), 'v' + i.version + ' · ' + label, status));
       const syncing = i.readyAt !== null || (i.pending && i.pending.at !== null) || i.appliedAt === s.time;
       edges.push(controlEdge('config', id, syncing ? 0.9 : 0), flow('gateway', id, i.frameHits, f.requests),
@@ -463,7 +539,7 @@
       }
       edges.push(reviewEdge);
     });
-    return {nodes, edges};
+    return {nodes, edges, ...batches(space, 'resilience/' + s.namespace + '/' + s.mode)};
   }
 
   function table(headers, rows) {
@@ -516,41 +592,19 @@
     return html;
   }
 
-  function summaryResilience(s) {
-    if (s.mode === 'retry') {
-      const f = s.retry.frame;
-      return [['演练', '多层重试'], ['额外重试次数', '客户端 ' + s.retry.clientRetries + ' / 网关 ' + s.retry.gatewayRetries + ' / 商品 ' + s.retry.productRetries],
-        ['评论错误率', s.retry.failure + '%'], ['最近一笔', '入口 ' + f.entrance + ' → 网关 ' + f.gateway + ' → 商品 ' + f.product + ' → 评论 ' + f.review],
-        ['累计结果', s.retry.total.entrance + ' 笔入口请求，' + s.retry.total.review + ' 次评论调用，成功 ' + s.retry.total.successes + ' 笔']];
-    }
-    const space = active(s);
-    const f = space.frame;
-    const summary = [['演练', s.mode === 'config' ? '发布降级配置' : '自动熔断'], ['命名空间', s.namespace],
-      ['配置中心', '最新 v' + space.version + '，全量 v' + space.base.version + (space.base.skip ? ' 跳过评论' : ' 加载评论')],
-      ['商品实例', space.instances.map(i => i.id + ' v' + i.version + (i.skip ? ' 跳过' : ' 加载') + '，本秒调用评论 ' + i.frameCalls + ' 次').join(' / ') || '暂无实例'],
-      ['当前评论与重试设置', '延迟 ' + s.delay + ' ms，错误率 ' + s.errorRate + '%，超时 ' + s.timeout + ' ms，最多重试 ' + s.retries + ' 次，间隔 ' + s.interval + ' ms']];
-    if (s.mode === 'breaker') summary.push(['熔断规则', ruleNote(s) + ' 最大 RT ' + s.maxRT + ' ms，熔断 ' + s.openSeconds + ' s。'],
-      ['断路器状态', space.instances.map(i => i.id + ' ' + i.breaker.state).join(' / ')]);
-    summary.push(['本秒商品响应', f.requests + ' 笔请求，HTTP 200 共 ' + f.ok + ' 笔，降级 ' + f.degraded + ' 笔，平均 ' + (f.requests ? Math.round(f.rt / f.requests) : 0) + ' ms'],
-      ['本秒评论调用', f.calls + ' 次，重试 ' + f.retries + ' 次，超时 ' + f.timeouts + ' 次，服务报错 ' + f.errors + ' 次']);
-    if (space.last) summary.push(['最近一笔', (space.last.instance ? space.last.instance + ' · v' + space.last.version + ' · ' : '')
-      + responseLabel(space.last) + '，' + reasons[space.last.reason] + '，耗时 ' + space.last.rt + ' ms']);
-    return summary;
-  }
-
   window.Lab.scenes.resilience = {init: initResilience, tick: tickResilience, act: actResilience, controls: controlsResilience,
-    stats: statsResilience, stage: stageResilience, detail: detailResilience, summary: summaryResilience, syncInstances};
+    stats: statsResilience, stage: stageResilience, detail: detailResilience, syncInstances};
 
   function meshFrame() { return {requests: 0, v1: 0, v2: 0, header: 0, tagged: 0, weightedV1: 0, weightedV2: 0}; }
 
   function initMesh() {
     const initial = {version: 1, v2: 10, byHeader: false};
     return {time: 0, architecture: 'sidecar', desired: copyRule(initial), applied: copyRule(initial), due: null, appliedAt: null,
-      hold: false, rate: 100, taggedShare: 20, tagCredit: 0, weightCredit: 0,
+      hold: false, rate: lab.workloads.mesh.initial, taggedShare: 20, tagCredit: 0, weightCredit: 0,
       frame: meshFrame(), total: meshFrame(), last: null};
   }
 
-  function routeMesh(s, tagged) {
+  function routeMesh(s, tagged, batch, at) {
     const policy = s.applied;
     const matched = policy.byHeader && tagged;
     let destination = 'v2';
@@ -567,21 +621,27 @@
       else f[destination === 'v1' ? 'weightedV1' : 'weightedV2']++;
     }
     s.last = {version: policy.version, destination, matched, tagged, architecture: s.architecture};
+    const proxy = s.architecture === 'sidecar';
+    lab.flow.add(batch, at, proxy ? ['client', 'gateway', 'sidecar', destination] : ['client', 'gateway', destination],
+      proxy ? ['neutral', 'neutral', 'pass'] : ['neutral', 'pass'], {kind: 'entry', ...s.last, code: 200});
   }
 
   function tickMesh(s) {
+    const batch = lab.flow.begin(s, s.time);
     if (!s.hold && s.due !== null && s.time >= s.due) {
       s.applied = copyRule(s.desired);
       s.appliedAt = s.time;
       s.weightCredit = 0;
       s.due = null;
+      lab.flow.add(batch, 0, ['control', s.architecture === 'sidecar' ? 'sidecar' : 'gateway'], ['control'],
+        {kind: 'control', version: s.applied.version, architecture: s.architecture});
     }
     s.frame = meshFrame();
     for (let i = 0; i < s.rate; i++) {
       s.tagCredit += s.taggedShare;
       const tagged = s.tagCredit >= 100;
       if (tagged) s.tagCredit -= 100;
-      routeMesh(s, tagged);
+      routeMesh(s, tagged, batch, (i + 0.5) / s.rate);
     }
   }
 
@@ -597,28 +657,31 @@
     else if (key === 'byHeader') editMeshRule(s, {byHeader: Boolean(value)});
     else if (key === 'architecture' && s.architecture !== value && ['sidecar', 'sdk'].includes(value)) {
       s.architecture = value;
+      // The new executor loads the published rule at the next delivery.
+      s.due ??= s.time + 1;
       s.frame = meshFrame();
       s.last = null;
+      clearBatches(s);
     }
     else if (key === 'taggedShare') s.taggedShare = clip(value, 0, 100);
-    else if (key === 'meshRate') s.rate = clip(value, 0, 200);
+    else if (key === 'meshRate') s.rate = clip(value, 0, lab.workloads.mesh.max);
     else if (key === 'hold') s.hold = Boolean(value);
     else if (key === 'plainRequest' || key === 'taggedRequest') {
-      routeMesh(s, key === 'taggedRequest');
+      routeMesh(s, key === 'taggedRequest', lab.flow.manual(s), 0);
       ctx.notify((s.last.matched ? '命中请求头规则' : '按版本权重分配') + '，请求到达商品 ' + s.last.destination + '。');
     }
   }
 
   function controlsMesh(s) {
     return select('architecture', '治理逻辑放在哪里', s.architecture,
-      [['sidecar', 'Sidecar · 独立代理'], ['sdk', 'SDK · 网关进程内']])
+      [['sidecar', 'Istio · Envoy 出站代理'], ['sdk', '商城网关 · 内置 SDK']])
       + range('weightV1', '商品 v1 权重', 100 - s.desired.v2, 0, 100, 5, '%')
       + range('weightV2', '商品 v2 权重', s.desired.v2, 0, 100, 5, '%')
       + toggle('byHeader', '带内测请求头的流量优先去 v2', s.desired.byHeader)
       + hint(s.due === null ? '两个版本的权重合计 100%。调整规则后，单步查看新分流。'
         : '配置源已生成规则 #' + s.desired.version + '，当前转发仍使用 #' + s.applied.version + '。')
       + closer('定向发请求与配置下发', range('taggedShare', '带内测请求头的比例', s.taggedShare, 0, 100, 5, '%')
-        + range('meshRate', '每秒商品请求', s.rate, 0, 200, 10, '笔') + toggle('hold', '暂停下发配置', s.hold)
+        + range('meshRate', '每秒商品请求', s.rate, 0, lab.workloads.mesh.max, 5, '笔') + toggle('hold', '暂停下发配置', s.hold)
         + actions(button('plainRequest', '发普通请求'), button('taggedRequest', '发内测请求')));
   }
 
@@ -637,13 +700,13 @@
       node('v2', 'v2', '商品 v2', (sidecar ? '入站代理 · ' : '') + f.v2 + ' 笔')];
     const edges = [flow('client', 'gateway', f.requests, f.requests)];
     if (sidecar) {
-      nodes.push(node('sidecar', 'sidecar', 'Envoy 代理', '执行规则 #' + s.applied.version));
+      nodes.push(node('sidecar', 'sidecar', 'Envoy 出站代理', '执行规则 #' + s.applied.version));
       edges.push(flow('gateway', 'sidecar', f.requests, f.requests));
     }
     edges.push(s.hold ? {from: 'control', to: executor, kind: 'blocked', weight: 0}
       : controlEdge('control', executor, s.due !== null || s.appliedAt === s.time ? 1 : 0),
     flow(executor, 'v1', f.v1, f.requests), flow(executor, 'v2', f.v2, f.requests));
-    return {nodes, edges};
+    return {nodes, edges, ...batches(s, 'mesh/' + s.architecture)};
   }
 
   function meshYaml(rule) {
@@ -673,16 +736,6 @@
       + '<pre><code>' + escape(meshYaml(s.desired)) + '</code></pre>');
   }
 
-  function summaryMesh(s) {
-    const f = s.frame;
-    return [['治理方式', s.architecture === 'sidecar' ? 'Envoy Sidecar' : '网关进程内 SDK'],
-      ['配置版本', '配置源 #' + s.desired.version + ' / 数据转发 #' + s.applied.version + (s.hold ? '，暂停下发' : '')],
-      ['生效权重', 'v1 ' + (100 - s.applied.v2) + '% / v2 ' + s.applied.v2 + '%'],
-      ['内测请求头', s.applied.byHeader ? 'x-canary: true 优先路由到 v2' : '按权重分配'],
-      ['本秒路由', f.requests + ' 笔请求，v1 收到 ' + f.v1 + ' 笔，v2 收到 ' + f.v2 + ' 笔，命中请求头 ' + f.header + ' 笔'],
-      ['累计分流', 'v1 收到 ' + s.total.v1 + ' 笔，v2 收到 ' + s.total.v2 + ' 笔']];
-  }
-
   window.Lab.scenes.mesh = {init: initMesh, tick: tickMesh, act: actMesh, controls: controlsMesh, stats: statsMesh,
-    stage: stageMesh, detail: detailMesh, summary: summaryMesh};
+    stage: stageMesh, detail: detailMesh};
 })();

@@ -3,6 +3,7 @@
 
   const Lab = window.Lab;
   const servicePath = 'POST /signup/verify-phone';
+  const validationPath = ['phone-input', 'phone-validator', 'phone-assertion'];
   const samples = [
     { key: 'long', name: '多一位数字', raw: '138000000001', expected: false },
     { key: 'first', name: '首位为 0', raw: '03800000000', expected: false },
@@ -27,7 +28,9 @@
   }
 
   function init() {
-    return {
+    const state = {
+      time: 0,
+      manualBatch: null,
       rows: [
         makeRow(1, '符合课堂规则', '13800000000', true),
         makeRow(2, '少一位数字', '1380000000', false),
@@ -41,6 +44,8 @@
       importNote: '',
       importError: false
     };
+    Lab.flow.begin(state, state.time);
+    return state;
   }
 
   function validDigits(raw) {
@@ -74,7 +79,7 @@
       const defect = defectFor(row);
       if (defect) found.add(defect);
     }
-    return { found, passed, failed, pending: s.rows.length - passed - failed };
+    return { found, passed, failed };
   }
 
   function append(s, name, raw, expected) {
@@ -83,13 +88,18 @@
     return row;
   }
 
-  function run(row) {
+  function run(row, batch, at = 0) {
     row.actual = serviceAccepts(row.raw);
+    const outcome = row.actual === row.expected ? 'pass' : 'stop';
+    Lab.flow.add(batch, at, validationPath, ['neutral', outcome], {
+      rowId: row.id, raw: row.raw, expected: row.expected, actual: row.actual
+    });
   }
 
   function tick(s) {
+    Lab.flow.begin(s, s.time);
     const next = s.rows.find(row => row.actual === null);
-    if (next) run(next);
+    if (next) run(next, s.batch);
     return Boolean(next);
   }
 
@@ -265,12 +275,16 @@
       case 'phone-signup':
         {
           const row = append(s, '注册表单', s.signupRaw, s.signupExpected);
-          run(row);
+          run(row, Lab.flow.manual(s));
           s.signupLastId = row.id;
         }
         break;
       case 'phone-all':
-        s.rows.forEach(run);
+        if (s.rows.length) {
+          const batch = Lab.flow.manual(s);
+          const spacing = 0.8 / Math.max(1, s.rows.length - 1);
+          s.rows.forEach((row, index) => run(row, batch, index * spacing));
+        }
         break;
       case 'phone-add':
         append(s, '自定义用例', '', false);
@@ -279,7 +293,7 @@
       case 'phone-run':
         {
           const row = s.rows.find(item => item.id === Number(value));
-          if (row) run(row);
+          if (row) run(row, Lab.flow.manual(s));
         }
         break;
       case 'phone-remove':
@@ -427,38 +441,23 @@
     return [['通过', passed, '例'], ['失败', failed, '例'], ['已发现缺陷', found.size, '类']];
   }
 
-  function summary(s) {
-    const { found, passed, failed, pending } = counts(s);
-    return [
-      ['被测接口', servicePath],
-      ['格式要求', '11 位半角数字，首位为 1，第二位为 3–9'],
-      ['用例执行', passed + ' 例通过，' + failed + ' 例失败，' + pending + ' 例待运行'],
-      ['已发现缺陷', found.size + ' / 2 类' + (found.size ? ' · ' + [...found].map(key => defects[key]).join('、') : '')]
-    ];
+  function stage(s) {
+    const { passed, failed } = counts(s);
+    const [input, validator, assertion] = validationPath;
+    return {
+      nodes: [
+        { id: input, role: 'client', label: '测试输入', sub: s.rows.length + ' 条用例' },
+        { id: validator, role: 'product', label: '注册校验', sub: '已运行 ' + (passed + failed) + ' 条' },
+        { id: assertion, role: 'control', label: '预期断言', sub: passed + ' 通过 / ' + failed + ' 失败' }
+      ],
+      edges: [
+        { from: input, to: validator, kind: 'flow', weight: 1 },
+        { from: validator, to: assertion, kind: 'flow', weight: 1 }
+      ],
+      ...Lab.flow.batches(s),
+      legend: { pass: '断言通过', stop: '断言失败' }
+    };
   }
 
-  function evidence(s) {
-    const firstExamples = new Map();
-    for (const row of s.rows) {
-      const key = defectFor(row);
-      if (key && !firstExamples.has(key)) firstExamples.set(key, row);
-    }
-    const examples = new Set(firstExamples.values());
-    const ordered = [...examples, ...s.rows.filter(row => row.actual !== null && !examples.has(row)),
-      ...s.rows.filter(row => row.actual === null)];
-    const snapshot = ordered.slice(0, 8).map(row => {
-      const actual = row.actual === null ? '待运行' : '实际' + validity(row.actual) + ' · ' + verdict(row);
-      const defect = defectFor(row);
-      const observed = '预期' + validity(row.expected) + ' · ' + actual + (defect ? ' · ' + defects[defect] : '');
-      const label = preview(row.name || '未命名', 24);
-      const raw = preview(visibleRaw(row.raw), 40);
-      return ['#' + row.id + ' ' + label + ' · ' + raw, observed];
-    });
-    if (ordered.length > snapshot.length) {
-      snapshot.push(['其他用例', '另有 ' + (ordered.length - snapshot.length) + ' 例，完整记录可导出为 CSV。']);
-    }
-    return snapshot;
-  }
-
-  Lab.scenes.phone = { init, act, tick, workspace, controls, stats, summary, evidence };
+  Lab.scenes.phone = { init, act, tick, stage, workspace, controls, stats };
 })();

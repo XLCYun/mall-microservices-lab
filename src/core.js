@@ -12,12 +12,13 @@
           "'": '&#39;',
         })[character]
     );
+  const heartbeatPath = 'M12 21.5C10.4 20.1 2 14.8 2 8.8C2 2.5 8.9 1.4 12 7.7C15.1 1.4 22 2.5 22 8.8C22 14.8 13.6 20.1 12 21.5Z';
   const icons = {
+    heartbeat: '<path d="' + heartbeatPath + '" fill="#f13c5c" stroke="none"/>',
     play: '<path d="m8 5 11 7-11 7z" fill="currentColor" stroke="none"/>',
     pause: '<path d="M8 5v14m8-14v14" stroke-width="3.5"/>',
     step: '<path d="m5 6 9 6-9 6z" fill="currentColor" stroke="none"/><path d="M18 6v12" stroke-width="2.6"/>',
     reset: '<path d="M3.5 10a8.5 8.5 0 1 1 1.7 7.6"/><path d="M3.5 4.5V10H9"/>',
-    grid: '<rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.5"/><rect x="14" y="3.5" width="6.5" height="6.5" rx="1.5"/><rect x="3.5" y="14" width="6.5" height="6.5" rx="1.5"/><rect x="14" y="14" width="6.5" height="6.5" rx="1.5"/>',
     expand: '<path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/>',
     shrink: '<path d="M4 9h5V4m11 5h-5V4M4 15h5v5m11-5h-5v5"/>',
     panels:
@@ -26,13 +27,9 @@
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v6l3.8 2"/>',
     book: '<path d="M4 4h11a3 3 0 0 1 3 3v13H6a2 2 0 0 1-2-2zm0 13a2 2 0 0 1 2-2h12M8 8h6"/>',
     note: '<path d="M5 3.5h10L19 8v12.5H5zM14.5 4v5H19M8 13h8m-8 4h6"/>',
-    close: '<path d="m6 6 12 12M18 6l-12 12"/>',
     chevron: '<path d="m8 10 4 4 4-4"/>',
     mission:
       '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
-    pencil: '<path d="m4 15 11-11 4 4L8 19l-5 1zM13 6l4 4"/>',
-    image:
-      '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m4 16 5-5 4 4 3-3 5 5"/><circle cx="15" cy="8.5" r="1.4" fill="currentColor" stroke="none"/>',
     download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
     list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
@@ -57,8 +54,8 @@
       escape(value) +
       '<small>' +
       escape(unit) +
-      '</small></output></span><input type="range" data-key="' +
-      escape(key) +
+      '</small></output></span><input type="range" aria-label="' +
+      escape(label) + '" data-key="' + escape(key) +
       '" min="' +
       escape(min) +
       '" max="' +
@@ -121,5 +118,5 @@
       '</button>'
     );
   }
-  window.Lab = { scenes: Object.create(null), ui: { escape, icon, range, select, toggle, button } };
+  window.Lab = { scenes: Object.create(null), ui: { escape, icon, heartbeatPath, range, select, toggle, button } };
 })();

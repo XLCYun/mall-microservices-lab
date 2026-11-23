@@ -1,0 +1,179 @@
+.origin-single,
+.origin-conf,
+.origin-fleet {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: clamp(300px, 27vw, 430px);
+}
+
+.origin-single {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  background: #f1edf8;
+}
+.origin-single-route {
+  --route-gap: clamp(14px, 2cqw, 30px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--route-gap);
+  align-content: center;
+  margin: 0;
+  padding: clamp(26px, 2.6cqw, 40px) clamp(10px, 1.8cqw, 28px);
+  list-style: none;
+}
+.origin-single-route li {
+  display: grid;
+  align-content: start;
+  gap: clamp(6px, 0.8cqw, 12px);
+  color: #362c49;
+  font-size: clamp(13px, 1.3cqw, 19px);
+  font-weight: 650;
+  line-height: 1.45;
+  text-align: center;
+}
+/* Each square in the illustration contains one complete device. */
+.origin-single-device {
+  position: relative;
+  aspect-ratio: 1;
+  background: url("./art/registry-single.webp") left center / 300% 100% no-repeat;
+}
+.origin-single-route li:nth-child(2) .origin-single-device { background-position: center; }
+.origin-single-route li:last-child .origin-single-device { background-position: right center; }
+.origin-single-route li:not(:last-child) .origin-single-device::after {
+  content: '→';
+  position: absolute;
+  left: calc(100% + var(--route-gap) / 2);
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #655382;
+  font: 600 clamp(17px, 1.9cqw, 28px)/1 var(--font);
+}
+.origin-single-conf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px clamp(16px, 2.3cqw, 34px);
+  padding: 12px clamp(18px, 2.35cqw, 34px);
+  color: #f6f4ff;
+  background: #242139;
+}
+.origin-single-conf strong {
+  font: 600 clamp(14px, 1.3cqw, 19px)/1.4 var(--mono);
+}
+@media (max-width: 760px) {
+  #registry-story-single { grid-template-columns: minmax(0, 1fr); }
+  #registry-story-single .registry-story-copy, .origin-single { min-height: 0; }
+}
+
+.origin-conf {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(14px, 1.3vw, 23px);
+  padding: clamp(21px, 2.35vw, 40px);
+  color: #f6f4ff;
+  background: #242139;
+}
+.origin-conf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #4d4965;
+}
+.origin-conf-header strong {
+  color: #f7f5ff;
+  font: 650 clamp(16px, 1.4vw, 21px)/1.3 var(--mono);
+}
+.origin-conf-header span {
+  color: #d0cce3;
+  font-size: clamp(13px, 1.06vw, 16px);
+}
+.origin-conf pre, .origin-single-conf pre {
+  margin: 0;
+  overflow-x: auto;
+  color: #ece8ff;
+  font: 500 clamp(15px, 1.26vw, 20px)/1.4 var(--mono);
+  tab-size: 4;
+}
+.origin-conf pre code, .origin-single-conf code {
+  font: inherit;
+  white-space: pre;
+}
+.origin-conf em, .origin-single-conf em {
+  color: #a9efd3;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.origin-fleet {
+  display: grid;
+  align-content: center;
+  padding: clamp(20px, 2vw, 34px);
+  color: #332b49;
+  background: #eeebf8;
+}
+.origin-fleet table {
+  width: 100%;
+  border-spacing: 0;
+  border: 1px solid #d3cde2;
+  border-radius: 10px;
+  overflow: hidden;
+  color: #372f46;
+  background: #fff;
+  text-align: left;
+  font-size: clamp(15px, 1.16vw, 18px);
+}
+.origin-fleet caption {
+  padding-bottom: 15px;
+  color: #463663;
+  text-align: left;
+  font-size: clamp(18px, 1.55vw, 24px);
+  font-weight: 680;
+}
+.origin-fleet :is(td, th) {
+  padding: clamp(9px, 1vw, 16px) clamp(8px, 1vw, 16px);
+  text-align: left;
+  vertical-align: middle;
+}
+.origin-fleet thead th {
+  background: #f6f3fa;
+  color: #696276;
+  font-size: 0.89em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.origin-fleet tbody :is(th, td) {
+  border-top: 1px solid #e9e5f0;
+}
+.origin-fleet tbody th { font-weight: 650; }
+.origin-fleet td code {
+  display: block;
+  margin-top: 3px;
+  color: #62576e;
+  font: 480 0.91em/1.4 var(--mono);
+  white-space: nowrap;
+}
+.origin-fleet-status {
+  display: inline-block;
+  white-space: nowrap;
+  color: #575064;
+}
+.origin-fleet-status[data-change='removed'],
+.origin-fleet-status[data-change='added'] {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-weight: 650;
+}
+.origin-fleet-status[data-change='removed'] {
+  color: #8b3840;
+  background: #fae5e6;
+}
+.origin-fleet-status[data-change='added'] {
+  color: #18594b;
+  background: #d9f2e8;
+}

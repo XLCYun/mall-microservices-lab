@@ -189,50 +189,28 @@
     ellipse(ctx, lx, ly, 1.6, 0.8, lamp);
   }
 
-  // A solid arch with an open centre. The front and rear profiles are joined in depth.
+  // The quota controller is a low slide gate. Its two rails leave the request lane open.
   function gateway(ctx, lamp) {
-    box(ctx, -27, -13, 27, 14, 7.4, 9.6, ['#674e50', '#534147', '#473c45'], 3);
-    for (const y of [-11, -2, 7, 16]) {
-      line3(ctx, [[-3.4, y - 1, 9.8], [0, y + 1.5, 9.8], [3.4, y - 1, 9.8]], '#e6af91', 0.92);
+    box(ctx, -27, -16, 27, 16, 7.4, 10, ['#7e6768', '#63545c', '#51464f'], 3.5, '#a38b85');
+    box(ctx, -24, -8, 24, 8, 10, 11.5, ['#60575c', '#45434f', '#3c3946'], 2);
+    for (const y of [-5.6, 5.6]) {
+      line3(ctx, [[-22, y, 11.6], [22, y, 11.6]], '#dcb7a4', 1.15);
     }
-    for (const x of [-22, 22]) {
-      box(ctx, x - 5.7, -8.3, x + 5.7, 9.3, 9, 13, ['#c59283', '#9a716c', '#795657'], 1.6);
+    for (const x of [-13, 2, 16]) {
+      line3(ctx, [[x - 2.2, -2.6, 11.7], [x + 1.1, 0, 11.7], [x - 2.2, 2.6, 11.7]], '#ffd7ac', 0.9);
     }
-    const profile = [[-28, 12], [-28, 46], [-27, 51], [-24, 56], [-19.5, 60], [-14, 62],
-      [14, 62], [19.5, 60], [24, 56], [27, 51], [28, 46], [28, 12], [17.8, 12],
-      [17.8, 44], [17.2, 47], [15.3, 50], [12.3, 51.7], [-12.3, 51.7], [-15.3, 50],
-      [-17.2, 47], [-17.8, 44], [-17.8, 12]];
-    const profileAt = (y) => profile.map(([x, z]) => project(x, y, z));
-    const front = 7.8, rear = -7.8;
-    polygon(ctx, profileAt(rear), '#995951', '#bc7265');
-    profile.forEach(([x1, z1], i) => {
-      const [x2, z2] = profile[(i + 1) % profile.length];
-      const nx = z1 - z2;
-      const nz = x2 - x1;
-      if (nx + 0.82 * nz <= 0) return;
-      const strength = nz / (Math.abs(nz) + Math.abs(nx) || 1);
-      let fill = '#c16b59';
-      if (i >= 12) fill = strength < 0 ? '#78474a' : '#a1645b';
-      else if (strength > 0.74) fill = '#ffd0aa';
-      else if (strength > 0.37) fill = '#f8b38e';
-      else if (strength > 0) fill = '#e89576';
-      poly3(ctx, [[x1, rear, z1], [x2, rear, z2], [x2, front, z2], [x1, front, z1]], fill, fill, 0.65);
-    });
-    polygon(ctx, profileAt(front), gradient(ctx, -35, -52, 18, -12, '#ffb69b', '#ed8069'), '#ffc4a8', 0.85);
-    const inside = [[-20.2, 16], [-20.2, 44], [-19.5, 48.3], [-17.3, 51.8], [-13.1, 54.2],
-      [13.1, 54.2], [17.3, 51.8], [19.5, 48.3], [20.2, 44], [20.2, 16]];
-    stroke(ctx, inside.map(([x, z]) => project(x, front + 0.1, z)), '#985c50', 1.65);
-    stroke(ctx, inside.map(([x, z]) => project(x, front + 0.2, z + 0.55)), '#ffebca', 0.78);
-    for (const x of [-23.3, 23.3]) {
-      frontPanel(ctx, x - 1.8, x + 1.8, front + 0.2, 18, 24.7, '#844d49', '#ffbca5');
-      line3(ctx, [[x, front + 0.3, 19.2], [x, front + 0.3, 23.5]], lamp, 1.15);
+    box(ctx, -24, -15.5, 24, -8, 10.1, 17.5, ['#ffd0ad', '#de927c', '#ab746a'], 2.7, '#ffe1c2');
+    box(ctx, -24, 8.2, 24, 16, 10.1, 17.5, ['#ffc3a1', '#e6927d', '#b87567'], 2.5, '#ffd9b5');
+    box(ctx, -17, -6.8, -9.5, 5, 11.5, 15.1, ['#ffac8b', '#ca806d', '#a66e65'], 1.4, '#ffd1b2');
+    line3(ctx, [[-15, -5.4, 15.2], [-15, 3.3, 15.2]], '#ffe3c0', 1.1);
+    for (const x of [1.6, 6, 10.4]) {
+      line3(ctx, [[x, -13.5, 17.6], [x, -10, 17.6]], '#b48070', 0.9);
     }
-    for (let x = -8; x <= 8; x += 4) {
-      line3(ctx, [[x, -4.4, 62.2], [x, -0.1, 62.2]], '#c88b73', 1.1);
-    }
-    sidePanel(ctx, -4, 4.1, 28.15, 15.8, 26.9, '#9c645a', '#d99a80');
-    for (const z of [18.4, 21.0, 23.6]) {
-      line3(ctx, [[28.3, -1.8, z], [28.3, 2.3, z]], '#d49e87', 0.8);
+    frontPanel(ctx, -13, 3.5, 16.1, 12.1, 15.6, '#8a5d5b', '#d39480');
+    line3(ctx, [[-10, 16.2, 13.9], [-3.8, 16.2, 13.9]], lamp, 1.15);
+    for (const x of [10.5, 14.2]) {
+      const [sx, sy] = project(x, 16.2, 14);
+      ellipse(ctx, sx, sy, 0.9, 0.65, '#ffe2c1');
     }
   }
 
@@ -469,20 +447,84 @@
     ctx.restore();
   }
 
+  function arrangeRegistry(nodes, width, height) {
+    const products = nodes.filter(node => node.role === 'product');
+    const directory = nodes.find(node => node.role === 'registry');
+    const columns = directory ? Math.max(1, Math.ceil(products.length / 2)) : 1;
+    const stacked = columns === 1;
+    const mobile = width < 580;
+    const unit = Math.max(0.16, Math.min(
+      width / (mobile ? (stacked ? 544 : 680) : (stacked ? 663 : 800)),
+      height / (stacked ? 308 : 392), 1.28
+    ));
+    const primary = mobile ? clamp(width / (stacked ? 29 : 33), 9.3, 13.8) :
+      clamp(Math.min(height / 17.3, width / (stacked ? 39 : 44)), 12.4, 18);
+    const secondary = mobile ? Math.max(8.5, primary - 1.4) : Math.max(11, primary - 2);
+    const gap = mobile ? 5 : 9;
+    // Reserve a whole caption column beyond the vertical stack. The short
+    // heartbeat links occupy the other side of the machines.
+    const captionWidth = primary * (stacked ? 7.2 : 6.45) + (mobile ? 6 : 10);
+    const margin = Math.max(5, Math.min(width * 0.026, 22));
+    const clientX = Math.max(49 * unit + 3, width * (stacked ? 0.096 : 0.067));
+    let axisX = width - margin - captionWidth - gap - 47 * unit;
+    let lastX = axisX;
+    if (!stacked) {
+      lastX = width - margin - captionWidth / 2;
+      axisX = Math.min(width * (columns > 2 ? 0.475 : 0.56),
+        lastX - (columns - 1) * (captionWidth + 4));
+    }
+    const gatewayX = mix(clientX, axisX, stacked ? 0.435 : 0.47);
+    const showSubs = stacked || !mobile;
+    const lowerCaption = stacked ? 0 : primary + (showSubs ? secondary + 4 : 0) + 3;
+    const topY = 73 * unit + Math.max(5, height * 0.022) + lowerCaption;
+    const bottomY = height - Math.max(8, height * 0.039) - 22 * unit - lowerCaption;
+    const centerY = (topY + bottomY) / 2;
+    const byId = new Map();
+    function put(node, x, y, caption, column = 0) {
+      if (!node) return;
+      const size = node.role === 'gateway' ? unit * 1.035 : unit;
+      byId.set(node.id, {node, x, y, size, primary, secondary, showSubs, mobile, crowded: !stacked,
+        registryCaption: caption, registryColumn: column});
+    }
+    const get = role => nodes.find(node => node.role === role);
+    put(get('client'), clientX, centerY, get('reject') ? 'terminal-above' : 'below');
+    put(get('gateway'), gatewayX, centerY, get('reject') ? 'above' : 'below');
+    put(directory, axisX, centerY, 'right');
+    products.forEach((node, i) => {
+      if (!directory) {
+        const y = products.length === 1 ? centerY : mix(topY, bottomY, i / (products.length - 1));
+        put(node, axisX, y, 'right');
+        return;
+      }
+      const column = Math.floor(i / 2);
+      const x = stacked ? axisX : mix(axisX, lastX, column / Math.max(1, columns - 1));
+      put(node, x, i % 2 ? bottomY : topY, stacked ? 'right' : (i % 2 ? 'below' : 'rack-above'), column);
+    });
+    put(get('reject'), clientX + Math.min(22 * unit, (gatewayX - clientX) * 0.21), bottomY, 'right');
+    for (const node of nodes) {
+      if (!byId.has(node.id)) put(node, clientX, topY, 'right');
+    }
+    const items = [...byId.values()];
+    return {scene: 'registry', bench: false, items, byId, unit, mobile, width, height,
+      registryStacked: stacked, backToFront: items.slice().sort((a, b) => a.y - b.y)};
+  }
+
   function arrange(nodes, scene, width, height) {
+    if (scene === 'registry') return arrangeRegistry(nodes, width, height);
     const mobile = width < 580 || width / height < 1.45;
     const count = nodes.length;
     const crowded = count > 8;
     const dense = count > 10;
     const density = dense ? (mobile ? 0.69 : 0.78) : crowded ? 0.85 : 1;
-    const base = (mobile ? Math.min(width / 465, height / 295, 1.03) :
-      Math.min(width / 740, height / 312, 1.48)) * density;
+    const bench = scene === 'phone' || scene === 'contract';
+    const base = bench ? Math.min(width / 740, height / 132, 1.05) : (mobile ? Math.min(width / 465, height / 295, 1.03) :
+      Math.min(width / 740, height / (scene === 'gateway' ? 225 : 312), 1.48)) * density;
     const unit = Math.max(0.17, base);
     const primary = mobile ? clamp(width / 33, 9, 12.2) : clamp(13.1 * Math.min(1.08, unit + 0.1), 10, 15);
     const secondary = mobile ? clamp(primary - 1.2, 8.2, 10.7) : primary - 1.5;
     const showSubs = !(mobile && crowded) && !(dense && height < 410);
     const edgeX = Math.min(width * 0.135, Math.max(47 * unit + 2, primary * 2.45));
-    const upper = 70 * unit + 3;
+    const upper = scene === 'gateway' ? 77 * unit + 6 : 70 * unit + 3;
     const lower = height - 24 * unit - primary * 0.76 - (showSubs ? secondary + 6 : 3);
     const placements = new Map();
     const products = nodes.filter(node => node.role === 'product');
@@ -524,19 +566,26 @@
     }
 
     const many = products.length >= 4;
-    if (scene === 'gateway') {
+    if (bench) {
+      // Separate consumer/Stub and verifier/provider pairs without taking space from the editors.
+      const columns = count === 4 ? [0.065, 0.355, 0.645, 0.935] : [0.10, 0.50, 0.90];
+      nodes.forEach((node, i) => at(node, columns[i], i % 2 ? 0.25 : 0.78));
+    } else if (scene === 'gateway' && find('inventory') && find('review')) {
+      place('client', 0.055, 0.56); place('gateway', 0.42, 0.48);
+      at(products[0], 0.77, 0.025); place('inventory', 0.91, 0.48); place('review', 0.77, 0.95);
+    } else if (scene === 'gateway') {
       if (many) {
         place('client', 0.025, 0.54); place('gateway', 0.29, 0.44);
         place('reject', 0.29, 0.98); place('order', 0.10, 0.035);
         bank(0.63, 0.94, 0.01, 0.95, 2);
       } else {
-        place('client', mobile ? 0.015 : 0.045, mobile ? 0.52 : 0.54);
-        place('gateway', mobile ? 0.37 : 0.36, mobile ? 0.32 : 0.37);
-        place('reject', mobile ? 0.26 : 0.50, mobile ? 0.91 : 0.92);
-        place('order', mobile ? 0.73 : 0.77, 0.94);
-        bank(mobile ? 0.77 : 0.69, mobile ? 0.955 : 0.94, 0.025, 0.53, 2);
+        place('client', mobile ? 0.015 : 0.045, 0.55);
+        place('gateway', mobile ? 0.37 : 0.40, 0.23);
+        place('reject', mobile ? 0.26 : 0.245, 0.98);
+        place('order', mobile ? 0.73 : 0.60, 0.94);
+        bank(mobile ? 0.77 : 0.69, mobile ? 0.955 : 0.94, 0.025, 0.76, 2);
       }
-    } else if (scene === 'registry' || scene === 'scale') {
+    } else if (scene === 'scale') {
       place('client', mobile ? 0.015 : 0.04, 0.68);
       place('gateway', many ? 0.26 : 0.36, 0.52);
       place('registry', many ? 0.28 : 0.43, 0.04);
@@ -593,7 +642,8 @@
         at(node, best[0], best[1]);
       }
     }
-    return {items: Array.from(placements.values()), byId: placements, unit, mobile, width, height};
+    const items = Array.from(placements.values());
+    return {scene, bench, items, byId: placements, backToFront: items.slice().sort((a, b) => a.y - b.y), unit, mobile, width, height};
   }
 
   function drawFloor(ctx, width, height, unit) {
@@ -659,7 +709,9 @@
 
   function labelNodes(ctx, geometry) {
     const {items, width, height} = geometry;
+    const registration = geometry.scene === 'registry';
     const used = [];
+    const backRack = geometry.scene === 'gateway' && geometry.backToFront.find(item => item.node.role === 'product');
     const bodies = items.map(item => {
       const z = diameter(item.node.role) * item.size;
       return {x: item.x - 43 * item.size, y: item.y - z, w: 86 * item.size, h: z + 17 * item.size};
@@ -668,8 +720,10 @@
       const {node, size, mobile, primary, secondary, crowded} = item;
       let title = node.label || node.id;
       let sub = node.sub || '';
+      const server = registration && node.role === 'product';
+      if (server) title = String(title).replace(/^商品(?:实例)?\s*(\d+)$/, (_, number) => '商品服务器 ' + number.padStart(2, '0'));
       if (mobile) {
-        if (title === '商城客户端') title = '客户端';
+        if (title === '商城客户端' && !registration) title = '客户端';
         if (title === 'API 网关' && crowded) title = '网关';
         if (node.role === 'control' && String(title).startsWith('HPA')) title = 'HPA';
         sub = String(sub).replace(/请求\s*\/\s*秒/g, '次/秒');
@@ -680,23 +734,37 @@
       }
       const bodyFont = '620 ' + primary + 'px ' + fontFamily;
       const subFont = '450 ' + secondary + 'px ' + fontFamily;
-      const limit = mobile ? (crowded ? Math.max(43, width / 5.7) : Math.max(59, width / 4.15)) : Math.min(167, width / (crowded ? 6.8 : 4.8));
+      const rightCaption = item.registryCaption === 'right';
+      let limit = mobile ? (crowded ? Math.max(43, width / 5.7) : Math.max(59, width / 4.15)) : Math.min(167, width / (crowded ? 6.8 : 4.8));
+      if (registration) {
+        limit = rightCaption ? Math.max(60, width - item.x - 50 * size - (mobile ? 8 : 16)) :
+          Math.max(primary * 7.2 + 8, width / (crowded ? 6.2 : 5));
+      }
       ctx.font = bodyFont;
-      title = fitText(ctx, title, limit - 8);
+      if (!server) title = fitText(ctx, title, limit - 8);
       const dotWidth = mobile && crowded ? 6 : 9;
       const titleWidth = dotWidth + ctx.measureText(title).width;
       ctx.font = subFont;
       sub = item.showSubs && sub ? fitText(ctx, sub, limit) : '';
       const subWidth = sub ? ctx.measureText(sub).width : 0;
-      const groupWidth = Math.max(titleWidth, subWidth);
+      const groupWidth = Math.max(titleWidth, subWidth + (rightCaption && sub ? dotWidth : 0));
       const lineGap = mobile ? 2 : 3;
       const bodyH = primary + (sub ? lineGap + secondary : 0);
-      const y0 = item.y + 21.8 * size + (mobile ? 1.5 : 3);
+      // The lower rack's live traffic passes below the back rack on a shallow
+      // desktop stage. Put the back rack's caption beside it, clear of that lane.
+      const toSide = item === backRack && width - item.x > 48 * size + groupWidth + 5;
+      const x0 = rightCaption ? item.x + 47 * size + (mobile ? 5 : 9) + groupWidth / 2 :
+        toSide ? item.x + 46 * size + groupWidth / 2 : item.x;
+      let y0 = toSide ? item.y - 41 * size : item.y + 21.8 * size + (mobile ? 1.5 : 3);
+      if (rightCaption) y0 = item.y - 18 * size - bodyH / 2;
+      if (item.registryCaption === 'above') y0 = item.y - 35 * size - bodyH - 2;
+      if (item.registryCaption === 'terminal-above') y0 = item.y - 59 * size - bodyH - 3;
+      if (item.registryCaption === 'rack-above') y0 = item.y - 73 * size - bodyH - 3;
       const xs = [0, -groupWidth * 0.27, groupWidth * 0.27, -groupWidth * 0.58, groupWidth * 0.58];
       let place = null;
       for (const dy of [0, -3 * size, 4 * size, 9 * size]) {
         for (const dx of xs) {
-          const x = clamp(item.x + dx, groupWidth / 2 + 3, width - groupWidth / 2 - 3);
+          const x = clamp(x0 + dx, groupWidth / 2 + 3, width - groupWidth / 2 - 3);
           const y = clamp(y0 + dy, 1, Math.max(1, height - bodyH - 2));
           const rect = {x: x - groupWidth / 2 - 1, y, w: groupWidth + 2, h: bodyH};
           const overlap = bodies.reduce((sum, body, i) => sum + (items[i] === item ? 0 : rectOverlap(rect, body)), 0);
@@ -707,7 +775,7 @@
       }
       used.push(place.rect);
       const centerY = place.y + primary * 0.54;
-      const left = place.x - titleWidth / 2;
+      const left = place.x - (rightCaption ? groupWidth : titleWidth) / 2;
       const tone = statusTones[node.status] || statusTones.up;
       ctx.save();
       ctx.textBaseline = 'middle';
@@ -730,14 +798,15 @@
         ellipse(ctx, dotX, centerY, mobile && crowded ? 1.55 : 2.05, mobile && crowded ? 1.55 : 2.05, tone);
       }
       if (sub) {
-        ctx.textAlign = 'center';
+        ctx.textAlign = rightCaption ? 'left' : 'center';
         ctx.font = subFont;
         const sy = place.y + primary + lineGap + secondary * 0.55;
         ctx.strokeStyle = '#1b1d30d9';
         ctx.lineWidth = mobile ? 2 : 3;
-        ctx.strokeText(sub, place.x, sy);
+        const subX = rightCaption ? left + dotWidth : place.x;
+        ctx.strokeText(sub, subX, sy);
         ctx.fillStyle = '#bcb9d0';
-        ctx.fillText(sub, place.x, sy);
+        ctx.fillText(sub, subX, sy);
       }
       ctx.restore();
     }
@@ -753,9 +822,75 @@
     return [a[0] + dx * t, a[1] + dy * t];
   }
 
+  // These coordinates lie on the plinths of the original isometric machines.
+  // Both branches share the same physical decision point on the low gate.
+  const ports = {client: [29, -2], gateway: [-3, 8], reject: [3, 24]};
+  function portPosition(item) {
+    const [x, y] = project(...(ports[item.node.role] || [-4, 22]));
+    return [item.x + x * item.size, item.y + y * item.size];
+  }
+
+  function registryPath(start, finish, geometry) {
+    const u = geometry.unit;
+    // The terminal sends from its right-hand socket. The registry and every
+    // rack receive on matching left-front sockets, exposed beside their cases.
+    const sockets = {client: 27, gateway: -6, registry: -39, product: -39, reject: -13};
+    const socket = item => [item.x + (sockets[item.node.role] || 0) * item.size, item.y + 6 * u];
+    const a = socket(start), b = socket(finish);
+    const roles = [start.node.role, finish.node.role];
+    const rack = roles.includes('product') ? (start.node.role === 'product' ? start : finish) : null;
+    const directory = geometry.items.find(item => item.node.role === 'registry');
+    if (!rack || !directory) return [a, b];
+    const server = socket(rack), registry = socket(directory);
+    const upper = rack.y < directory.y;
+    const middleLane = upper ? (rack.y + 23 * u + directory.y - 57 * u) / 2 :
+      (directory.y + 23 * u + rack.y - 70 * u) / 2;
+    if (roles.includes('registry')) {
+      if (!rack.registryColumn) return [a, b];
+      const lane = middleLane + (upper ? -2.4 : 2.4) * u;
+      const way = [server, [server[0], lane], [registry[0], lane], registry];
+      return start === rack ? way : way.reverse();
+    }
+    if (!roles.includes('gateway')) return [a, b];
+    const gate = start.node.role === 'gateway' ? start : finish;
+    const source = socket(gate);
+    const span = server[0] - source[0];
+    const fork = [source[0] + Math.min(45 * u, span * 0.28), source[1]];
+    let way;
+    if (!rack.registryColumn) {
+      const ramp = Math.min((server[0] - fork[0]) * 0.76, Math.abs(server[1] - source[1]) / 0.77);
+      way = [source, fork, [fork[0] + ramp, server[1]], server];
+    } else {
+      const lane = middleLane + (upper ? 2.4 : -2.4) * u;
+      const firstTurn = [fork[0] + Math.min(46 * u, (server[0] - fork[0]) * 0.29), lane];
+      way = [source, fork, firstTurn, [server[0] - 18 * u, lane], server];
+    }
+    return start === gate ? way : way.reverse();
+  }
+
   function routePoints(start, finish, geometry, kind) {
-    const a = [start.x, start.y];
-    const b = [finish.x, finish.y];
+    if (geometry.scene === 'registry') return registryPath(start, finish, geometry);
+    const a = portPosition(start);
+    const b = portPosition(finish);
+    if (geometry.bench) {
+      // A shallow path leaves room above the machines' ports for the full bounce.
+      const y = Math.min(a[1], b[1]) - 9 * geometry.unit;
+      return [a, [a[0] + (a[1] - y) / slope, y], [b[0] - (b[1] - y) / slope, y], b];
+    }
+    if (geometry.scene === 'gateway' && start.node.role === 'gateway' && finish.node.role === 'product') {
+      // Fan out from the gate in screen-depth order. Two independently chosen
+      // shortest isometric routes can cross and make their destinations ambiguous.
+      const dy = b[1] - a[1], ramp = Math.abs(dy) / slope;
+      const straight = b[0] - a[0] - ramp;
+      if (straight > 8 * geometry.unit) {
+        if (dy < 0) {
+          const y = b[1] - Math.min(20 * geometry.unit, straight * slope / 3);
+          return [a, [a[0] + (a[1] - y) / slope, y], [b[0] - (b[1] - y) / slope, y], b];
+        }
+        const x = a[0] + straight * 0.56;
+        return [a, [x, a[1]], [x + ramp, b[1]], b];
+      }
+    }
     const [u1, v1] = toAxes(a), [u2, v2] = toAxes(b);
     const axesPaths = [[[u2, v1]], [[u1, v2]]];
     for (const fraction of [0.24, 0.5, 0.76]) {
@@ -864,14 +999,18 @@
     return 0.68;
   }
 
-  function drawRoutes(ctx, routes, unit) {
+  function drawRoutes(ctx, routes, geometry) {
     ctx.save();
-    const u = clamp(unit, 0.65, 1.4);
+    const gateway = geometry.scene === 'gateway';
+    const u = clamp(geometry.unit, 0.65, 1.4);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     for (const route of routes) {
       const {points, kind, active, weight} = route;
-      const color = edgeTones[kind];
+      const toProxy = geometry.scene === 'mesh' && route.to.node.role === 'sidecar';
+      const neutral = kind === 'flow' && (geometry.bench || route.from.node.role === 'client' || toProxy);
+      const toCanary = kind === 'flow' && geometry.scene === 'mesh' && route.to.node.role === 'v2';
+      const color = neutral ? '#b9aedf' : toCanary ? '#f5ca77' : edgeTones[kind];
       const control = kind === 'control';
       ctx.setLineDash([]);
       stroke(ctx, points, active ? '#141625c9' : '#212338', (control ? 2.8 : 4.5 + weight) * u);
@@ -884,6 +1023,19 @@
         active ? (control ? 0.8 : 0.84 + 0.14 * weight) : (kind === 'blocked' ? 0.64 : 0.49)),
         (active ? (control ? 1.1 : 0.9 + weight * 0.66) : 0.8) * u);
       ctx.setLineDash([]);
+      if (geometry.scene === 'registry' && control && route.length > 20 * u) {
+        const t = route.from.node.role === 'product' && route.from.registryColumn ? 0.32 : 0.5;
+        const [x, y] = along(route, t);
+        const [nextX, nextY] = along(route, t + 0.012);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(Math.atan2(nextY - y, nextX - x));
+        const arrow = [[-3.8 * u, -3.1 * u], [0.75 * u, 0], [-3.8 * u, 3.1 * u]];
+        stroke(ctx, arrow, '#24253a', 3.4 * u);
+        stroke(ctx, arrow, active ? '#e4dcff' : '#b4a8d6', 1.65 * u);
+        ctx.restore();
+      }
+      if (gateway) continue;
       route.port = endPort(route);
       if ((!active && kind !== 'blocked') || control) continue;
       if (kind === 'blocked') {
@@ -900,44 +1052,8 @@
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        stroke(ctx, [[-2.2 * u, -2.2 * u], [0.9 * u, 0], [-2.2 * u, 2.2 * u]], '#c0f4df', 1 * u);
+        stroke(ctx, [[-2.2 * u, -2.2 * u], [0.9 * u, 0], [-2.2 * u, 2.2 * u]], neutral ? '#ddd6f5' : '#c0f4df', 1 * u);
         ctx.restore();
-      }
-    }
-    ctx.restore();
-  }
-
-  function drawPackets(ctx, routes, seconds, unit) {
-    const u = clamp(unit, 0.64, 1.45);
-    ctx.save();
-    ctx.lineCap = 'round';
-    for (const route of routes) {
-      if (!route.active) continue;
-      const {kind, weight, seed} = route;
-      const control = kind === 'control';
-      const duration = control ? 2.9 : 2.25;
-      // A fractional emission rate preserves low weights. A 1% branch occasionally
-      // receives one packet instead of showing the same permanent dot as a 100% branch.
-      const rate = (control ? 0.62 : 2.02) * weight;
-      const pulse = seconds * rate + seed;
-      const last = Math.floor(pulse);
-      const first = Math.ceil(pulse - duration * rate);
-      const end = route.isFailure ? route.port : 1;
-      for (let tick = first; tick <= last; tick++) {
-        const progress = (pulse - tick) / (rate * duration);
-        const t = clamp(progress, 0, 1) * end;
-        const [x, y] = along(route, t);
-        const back = along(route, Math.max(0, t - (control ? 3 : 7) * u / route.length));
-        const tone = edgeTones[kind];
-        const radius = (control ? 1.35 : 2.45) * u;
-        stroke(ctx, [back, [x, y]], tint(tone, control ? 0.30 : 0.43), radius * 1.2);
-        ellipse(ctx, x, y, radius * 1.88, radius * 1.72, tint(tone, control ? 0.15 : 0.18));
-        if (kind === 'blocked') {
-          polygon(ctx, [[x, y - radius], [x + radius, y], [x, y + radius], [x - radius, y]], '#ffc2a4');
-        } else {
-          ellipse(ctx, x, y, radius, radius, control ? '#c8c0fc' : '#9ef5d4');
-          if (!control) ellipse(ctx, x - radius * 0.14, y - radius * 0.18, radius * 0.48, radius * 0.48, '#e6fff4');
-        }
       }
     }
     ctx.restore();
@@ -978,7 +1094,7 @@
     art.restore();
   }
 
-  function drawStage(canvas, sceneId, model, clockSeconds) {
+  function drawStage(canvas, sceneId, model, clockSeconds, manual = []) {
     if (!canvas || typeof canvas.getContext !== 'function') return;
     const rect = typeof canvas.getBoundingClientRect === 'function' ? canvas.getBoundingClientRect() : {};
     const width = rect.width || canvas.clientWidth || 840;
@@ -992,10 +1108,11 @@
     if (!ctx) return;
     const nodes = model && Array.isArray(model.nodes) ? model.nodes : [];
     const edges = model && Array.isArray(model.edges) ? model.edges : [];
+    const flights = window.Lab.requestBalls;
     const sizeKey = [width, height, pixelW, pixelH].join('/');
     let state = stages.get(canvas);
     if (!state || state.sizeKey !== sizeKey) {
-      state = {sizeKey, ground: layer(canvas, pixelW, pixelH), glass: layer(canvas, pixelW, pixelH), sprites: new Map()};
+      state = {sizeKey, ground: layer(canvas, pixelW, pixelH), glass: layer(canvas, pixelW, pixelH), sprites: new Map(), history: new WeakMap()};
       stages.set(canvas, state);
     }
     const nodeKey = JSON.stringify([sceneId, nodes.map(n => [n.id, n.role, n.label, n.sub, n.status])]);
@@ -1004,8 +1121,6 @@
       state.nodeKey = nodeKey;
       state.geometry = arrange(nodes, sceneId, width, height);
       const art = fitLayer(state.glass, pixelW, pixelH, sx, sy);
-      const backToFront = state.geometry.items.slice().sort((a, b) => a.y - b.y);
-      for (const item of backToFront) drawMachine(canvas, state, art, item, sx, sy);
       labelNodes(art, state.geometry);
     }
     const edgeKey = JSON.stringify(edges.map(e => [e.from, e.to, e.kind, e.weight]));
@@ -1016,16 +1131,37 @@
       drawFloor(base, width, height, geometry.unit);
       for (const item of geometry.items) shadeGround(base, item);
       state.routes = planEdges(edges, geometry);
-      drawRoutes(base, state.routes, geometry.unit);
+      drawRoutes(base, state.routes, geometry);
+      geometry.connections = new Map(nodes.map(node => [node.id, new Map()]));
+      for (const route of state.routes) geometry.connections.get(route.from.node.id).set(route.to.node.id, route);
+      geometry.pointAt = along;
     }
-    // Artwork is cached between simulation ticks. Only the packets use the caller's clock.
+    // Retain the departure geometry for requests still airborne when the topology changes.
+    // Weak keys let expired batches and their old paths be collected.
+    for (const batch of [model.batch, ...manual.map(item => item.batch)]) {
+      if (batch && !state.history.has(batch)) state.history.set(batch, state.geometry);
+    }
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(state.ground.surface, 0, 0);
     ctx.setTransform(sx, 0, 0, sy, 0, 0);
-    drawPackets(ctx, state.routes, Number.isFinite(clockSeconds) ? clockSeconds : 0, state.geometry.unit);
+    const seconds = Number.isFinite(clockSeconds) ? clockSeconds : 0;
+    const balls = flights.atTime(state.geometry, model, seconds, manual, state.history);
+    for (const ball of balls) flights.shadow(ctx, ball);
+    function drawPacket(packet) {
+      if (packet.isHeartbeat) flights.heart(ctx, packet);
+      else flights.sphere(ctx, packet);
+    }
+    let next = 0;
+    for (const item of state.geometry.backToFront) {
+      while (next < balls.length && balls[next].depth < item.y) drawPacket(balls[next++]);
+      drawMachine(canvas, state, ctx, item, sx, sy);
+    }
+    while (next < balls.length) drawPacket(balls[next++]);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(state.glass.surface, 0, 0);
+    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+    for (const ball of balls) if (ball.emphasis) flights.tag(ctx, state.geometry, ball);
     ctx.restore();
   }
 

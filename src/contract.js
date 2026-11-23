@@ -3,6 +3,8 @@
 
   const Lab = window.Lab;
   const people = ['order', 'product'];
+  const stubPath = ['consumer', 'stub'];
+  const replayPath = ['verifier', 'inventory'];
   const roles = {
     order: { name: '订单服务', field: 'stock', expects: '下单时读取库存数量' },
     product: { name: '商品服务', field: 'available', expects: '商品页读取有货标记' }
@@ -434,6 +436,9 @@
     s.liveChecks = {};
     s.stubSource = '';
     s.manual = '';
+    s.manualBatch = null;
+    s.batch = null;
+    Lab.flow.begin(s, s.time);
   }
 
   function init() {
@@ -446,7 +451,15 @@
     return s;
   }
 
-  function runProvider(s, recordedOnly = false) {
+  function recordCall(batch, path, checked, details) {
+    // A complete consumer-driven run fits four actual calls into one simulation second.
+    const at = batch.requests.length * 0.24;
+    Lab.flow.add(batch, at, path, [checked.status === 'pass' ? 'pass' : 'stop'], {
+      ...details, assertion: checked.status, note: checked.note
+    });
+  }
+
+  function runProvider(s, batch, recordedOnly = false) {
     const actual = inventory(standardRequest(), s.version);
     s.own = ownTest(s.version, actual);
     for (const person of people) s.liveChecks[person] = consume(person, actual);
@@ -465,10 +478,13 @@
       const replay = inventory(request, s.version);
       const checked = result(compare(doc.response, replay, 'response'), 'HTTP ' + replay.status + '、约定的头和正文字段均匹配。');
       s.providerChecks[id] = { ...checked, request, actual: replay };
+      recordCall(batch, replayPath, checked, {
+        operation: 'replay', contractId: id, label: docName(id) + '重放', method, url, httpStatus: replay.status
+      });
     }
   }
 
-  function runConsumers(s, publishedOnly = false) {
+  function runConsumers(s, batch, publishedOnly = false) {
     s.stubSource = publishedOnly ? (s.providerChecks.shared?.status === 'pass' ? '已发布 Stub' : '等待发布 Stub') : '草稿 Stub';
     for (const person of people) {
       if (publishedOnly && s.providerChecks.shared?.status !== 'pass') {
@@ -481,30 +497,36 @@
         s.consumerChecks[person] = invalid(s.errors[id]);
         continue;
       }
-      const misses = compare(doc.request, standardRequest(), 'request');
-      if (misses.length) {
-        s.consumerChecks[person] = result(misses.map(note => 'Stub 未匹配调用请求。' + note));
-      } else {
-        // The stub replies with the contract's example, independently of the selected inventory version.
-        s.consumerChecks[person] = consume(person, doc.response);
-      }
+      const request = standardRequest();
+      const misses = compare(doc.request, request, 'request');
+      // Matching requests receive the contract example. Unmatched requests still reached the stub.
+      const checked = misses.length ? result(misses.map(note => 'Stub 未匹配调用请求。' + note)) : consume(person, doc.response);
+      s.consumerChecks[person] = checked;
+      recordCall(batch, stubPath, checked, {
+        operation: 'stub', contractId: id, consumer: person, label: roles[person].name + '调用 Stub',
+        method: request.method, url: request.url, httpStatus: misses.length ? null : doc.response.status
+      });
     }
   }
 
-  function step(s) {
+  function step(s, batch) {
     if (s.phase >= 3) return;
     s.manual = '';
     s.phase++;
     if (s.phase === 1) {
       for (const id of docIds(s)) parseFor(s, id);
     } else if (s.phase === 2) {
-      if (s.mode === 'consumer') runConsumers(s);
-      else runProvider(s);
+      if (s.mode === 'consumer') runConsumers(s, batch);
+      else runProvider(s, batch);
     } else if (s.mode === 'consumer') {
-      runProvider(s, true);
+      runProvider(s, batch, true);
     } else {
-      runConsumers(s, true);
+      runConsumers(s, batch, true);
     }
+  }
+
+  function tick(s) {
+    step(s, Lab.flow.begin(s, s.time));
   }
 
   function act(s, key, value, target, ctx) {
@@ -538,23 +560,25 @@
       case 'contract-help': s.help = !s.help; break;
       case 'contract-next':
         if (s.phase === 3) clearResults(s);
-        step(s);
+        step(s, Lab.flow.manual(s));
         break;
-      case 'contract-run':
+      case 'contract-run': {
         clearResults(s);
-        while (s.phase < 3) step(s);
+        const batch = Lab.flow.manual(s);
+        while (s.phase < 3) step(s, batch);
         ctx?.notify('本轮契约验证已结束');
         break;
+      }
       case 'contract-test-consumer':
         s.phase = 0;
         s.manual = 'consumer';
-        runConsumers(s);
+        runConsumers(s, Lab.flow.manual(s));
         ctx?.notify('已用当前草稿生成 Stub 并验证消费代码');
         break;
       case 'contract-test-provider':
         s.phase = 0;
         s.manual = 'provider';
-        runProvider(s);
+        runProvider(s, Lab.flow.manual(s));
         ctx?.notify('已重放契约请求并核对库存服务的响应');
         break;
     }
@@ -671,6 +695,26 @@
       consumerView(s) + editorView(s) + providerView(s) + '</div></div>';
   }
 
+  function calledChecks(checks, pending) {
+    const calls = Object.values(checks).filter(check => check.status === 'pass' || check.status === 'fail');
+    return calls.length ? calls.filter(check => check.status === 'pass').length + '/' + calls.length + ' 通过' : pending;
+  }
+
+  function stage(s) {
+    const stubStatus = s.stubSource === '等待发布 Stub' ? '等待发布' : '等待调用';
+    return {
+      nodes: [
+        {id: 'consumer', role: 'client', label: '消费者', sub: '订单 / 商品'},
+        {id: 'stub', role: 'product', label: '契约 Stub', sub: calledChecks(s.consumerChecks, stubStatus)},
+        {id: 'verifier', role: 'control', label: 'Verifier', sub: calledChecks(s.providerChecks, '等待重放')},
+        {id: 'inventory', role: 'inventory', label: '库存服务', sub: versionNames[s.version].split(' · ')[0]}
+      ],
+      edges: [stubPath, replayPath].map(([from, to]) => ({from, to, kind: 'flow', weight: 1})),
+      ...Lab.flow.batches(s),
+      legend: {pass: '验证通过', stop: '验证失败'}
+    };
+  }
+
   function passCount(results, total) {
     const rows = Object.values(results);
     return rows.length ? rows.filter(row => row.status === 'pass').length + '/' + total : '—';
@@ -688,31 +732,5 @@
     ];
   }
 
-  function summary(s) {
-    const affected = impacted(s).map(person => roles[person].name);
-    return [
-      ['驱动方式', modeNames[s.mode]], ['库存接口', versionNames[s.version]],
-      ['提供者接口自测', s.own ? s.own.count + '/3 通过' : '待验证'],
-      ['提供者契约验证', passCount(s.providerChecks, docIds(s).length)],
-      ['Stub 消费测试', passCount(s.consumerChecks, people.length)],
-      ['接入当前实现受影响', s.own ? (affected.join('、') || '无') : '待验证']
-    ];
-  }
-
-  function observed(check) {
-    return check ? statusNames[check.status] + ' · ' + check.note : '待验证';
-  }
-
-  function evidence(s) {
-    return [
-      ['库存服务 · 接口自测', observed(s.own)],
-      ...docIds(s).map(id => [docName(id) + ' · 提供者重放', observed(s.providerChecks[id])]),
-      ...people.flatMap(person => [
-        [roles[person].name + ' · ' + (s.stubSource || 'Stub'), observed(s.consumerChecks[person])],
-        [roles[person].name + ' · 接入当前实现', observed(s.liveChecks[person])]
-      ])
-    ];
-  }
-
-  Lab.scenes.contract = { init, tick: step, act, controls, workspace, stats, summary, evidence };
+  Lab.scenes.contract = { init, tick, act, controls, workspace, stage, stats };
 })();
