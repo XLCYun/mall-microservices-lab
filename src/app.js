@@ -227,7 +227,8 @@
     if (!run || showingGuide()) return;
     const replay = run.replay;
     const finished = replay && replay.elapsed >= replay.end;
-    const status = playing ? (replay ? '重放中' : '运行中') : finished ? '本批已播完' : '已暂停';
+    const completed = Boolean(module.finished?.(run.state));
+    const status = playing ? (replay ? '重放中' : '运行中') : completed ? '已完成' : finished ? '本批已播完' : '已暂停';
     $('#stage-status').textContent = status;
     $('#stage-status').parentElement.classList.toggle('live', playing);
     Lab.gatewayUI.render({
@@ -238,7 +239,7 @@
       state: run.state,
       overviewHost: $('#testing-overview'),
       workbenchHost: $('#testing-workspace'),
-      playing, speed, timeText: clock(run.state.time),
+      playing, completed, speed, timeText: clock(run.state.time),
       onAction: action,
       onShell: (command) => shell[command]?.(),
       onSpeed: setSpeed,
@@ -259,9 +260,9 @@
         ['passed', legend.pass || (id === 'gateway' ? '放行' : '转发')],
         ['rejected', legend.stop || (id === 'gateway' || id === 'scale' ? '拦截' : '调用失败')],
         ...(id === 'registry' ? [['heartbeat','心跳']] : []),
-        ...(hasControl ? [['control-ball', id === 'registry' ? '注册与名单更新' : '控制消息']] : [])
+        ...(hasControl ? [['control-ball', legend.control || (id === 'registry' ? '注册与名单更新' : '控制消息')]] : [])
       ];
-      fragment($('#legend'), '<strong>' + (topic.id === 'testing' ? '1 球 = 1 次验证调用' : '1 球 = 1 个请求') + '</strong>' + legendMarkup(items));
+      fragment($('#legend'), '<strong>' + escape(legend.unit || (topic.id === 'testing' ? '1 球 = 1 次验证调用' : '1 球 = 1 个请求')) + '</strong>' + legendMarkup(items));
       canvas.setAttribute(
         'aria-label',
         scene.stage +
@@ -325,6 +326,11 @@
         tick();
       }
     }
+    if (module.finished?.(run.state) && (!run.model.batch || fraction >= Lab.requestBalls.batchEnd(run.model.batch))) {
+      drawNow();
+      pause();
+      return;
+    }
     if (now - lastPaint >= 32) {
       drawNow();
       lastPaint = now;
@@ -346,6 +352,7 @@
       pause();
       return;
     }
+    if (module.finished?.(run.state)) return;
     if (run.replay && run.replay.elapsed >= run.replay.end) {
       run.replay = null;
       fraction = 0;
@@ -457,6 +464,7 @@
         guidePlayer.step();
         return;
       }
+      if (module.finished?.(run.state)) return;
       pause();
       run.replay = null;
       fraction = 0;

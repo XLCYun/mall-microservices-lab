@@ -5,7 +5,7 @@ import {deploymentFrames} from './src/registry-deployment.js';
 import {lessonRecords} from './src/guided-runs.js';
 import { phonePath, verifyPhone } from './src/phone-endpoint.js';
 
-const host = vm.createContext({ console });
+const host = vm.createContext({ console, setTimeout });
 host.window = host;
 for (const file of ['core', 'request-flow', 'story', 'traffic', 'registry-frames', 'resilience', 'phone', 'contract', 'request-balls']) {
   const source = await readFile(new URL('./src/' + file + '.js', import.meta.url), 'utf8');
@@ -529,47 +529,128 @@ assert.equal(phone.rows[1].actual, true);
 assert.equal(scenes.phone.verdict(phone.rows[1]), '通过');
 verifyPaths(scenes.phone.stage(phone));
 const contract = scenes.contract;
-for (const [version, affected, selfChecks] of [['original', 0, 3], ['rename', 1, 3], ['extra', 0, 3], ['type', 1, 3], ['status', 2, 2]]) {
+for (const [sku, units] of [['SKU-042', 12], ['SKU-007', 0]]) {
   const state = contract.init();
-  change(contract, state, 'contract-version', version);
-  assert.equal(contract.responsePreview(state).replayed, false);
-  change(contract, state, 'contract-run');
-  assert.equal(state.own.count, selfChecks);
-  const failed = Object.values(state.liveChecks).filter((check) => check.status === 'fail');
-  assert.equal(failed.length, affected);
-  assert.equal(contract.responsePreview(state).replayed, true);
-  assert.equal(contract.responsePreview(state).actual, state.providerChecks.order.actual);
-  verifyPaths(contract.stage(state));
-  assert.equal(state.manualBatch.requests.length, 4);
-  assert.equal(state.manualBatch.requests.filter(r => r.tones[0] === 'stop').length, failed.length);
+  assert.equal(contract.phase(state), 1);
+  change(contract, state, 'contract-sku', sku);
+  change(contract, state, 'contract-verify-original');
+  change(contract, state, 'contract-compare', 'rename');
+  assert.equal(state.baseline, null);
+  assert.equal(state.comparison, null);
+  assert.equal(state.pact, null);
+  let downloaded;
+  const downloadContext = { download: (...args) => { downloaded = args; } };
+  contract.act(state, 'contract-download', null, null, downloadContext);
+  assert.equal(downloaded, undefined);
+
+  change(contract, state, 'contract-order-test');
+  assert.equal(contract.phase(state), 2, '先运行客户端，再生成文件');
+  assert.equal(state.orderTest.value, units);
+  assert.equal(state.orderTest.passed, true);
+  assert.equal(state.orderTest.actual.body.stock, units);
+  assert.equal(state.pact, null);
+  assert.deepEqual(Array.from(state.manualBatch.requests, r => r.path.join('/')), ['consumer/stub']);
+  const consumerBatch = state.manualBatch;
+  change(contract, state, 'contract-verify-original');
+  change(contract, state, 'contract-order-test');
+  change(contract, state, 'contract-sku', sku === 'SKU-042' ? 'SKU-007' : 'SKU-042');
+  assert.equal(state.manualBatch, consumerBatch);
+  assert.equal(state.sku, sku);
+  advance(contract, state);
+  assert.equal(contract.phase(state), 3);
+  const file = state.pact;
+  const pact = JSON.parse(file);
+  const [interaction] = pact.interactions;
+  assert.equal(pact.consumer.name, '订单服务');
+  assert.equal(pact.provider.name, '库存服务');
+  assert.equal(interaction.request.body.sku, sku);
+  assert.equal(interaction.response.body.stock, units);
+  assert.deepEqual(Object.keys(interaction.response.body), ['stock']);
+  assert.equal(interaction.response.matchingRules.body['$.stock'].matchers[0].match, 'integer');
+  contract.act(state, 'contract-download', null, null, downloadContext);
+  assert.deepEqual(downloaded, ['order-inventory.json', file, 'application/json']);
+  change(contract, state, 'contract-compare', 'rename');
+  assert.equal(state.comparison, null);
+  change(contract, state, 'contract-verify-original');
+  assert.equal(state.baseline, null, '仅生成本地契约时，库存 CI 还不能验证');
+  assert.equal(state.broker.publications.order, undefined);
+  advance(contract, state);
+  assert.equal(contract.phase(state), 4);
+  assert.equal(state.broker.publications.order.file, file);
+  assert.equal(state.broker.publications.order.consumerVersion, contract.consumerBuilds.order);
+  assert.equal(state.batch.requests[0].operation, 'publish-pact');
+  assert.equal(state.batch.requests[0].path.join('/'), 'consumer/broker');
+  assert.equal(state.fetched, null);
+  advance(contract, state);
+  assert.equal(contract.phase(state), 5);
+  assert.equal(state.batch.requests[0].path.join('/'), 'broker/verifier');
+  assert.equal(state.fetched.order.file, file);
+  assert.equal(state.fetched.product, undefined);
+  change(contract, state, 'contract-verify-original');
+  assert.equal(contract.phase(state), 6);
+  const baselineResult = state.baseline;
+  assert.equal(baselineResult.passed, true);
+  assert.equal(baselineResult.actual.body.stock, units);
+  assert.deepEqual(Array.from(state.manualBatch.requests, r => r.path.join('/')), ['verifier/inventory']);
+  assert.equal(state.broker.results.original, undefined);
+  change(contract, state, 'contract-compare', 'rename');
+  assert.equal(state.comparison, null, '先回传基线结果，再验证变更');
+  advance(contract, state);
+  assert.equal(contract.phase(state), 7);
+  assert.equal(state.batch.requests[0].path.join('/'), 'verifier/broker');
+  const originalReport = state.broker.results.original;
+  assert.equal(originalReport.length, 1);
+  assert.equal(originalReport[0].providerVersion, contract.inventoryBuilds.original);
+  assert.equal(originalReport[0].consumerVersion, contract.consumerBuilds.order);
+  assert.equal(originalReport[0].passed, true);
+  change(contract, state, 'contract-compare', 'extra');
+  assert.equal(state.comparison, null, '先演示字段改名，再开放其他变更');
+  for (const [version, orderPasses, productPasses, status] of [
+    ['rename', false, true, 200], ['extra', true, true, 200],
+    ['type', false, true, 200], ['status', false, false, 202], ['rename', false, true, 200]
+  ]) {
+    change(contract, state, 'contract-compare', version);
+    assert.equal(contract.phase(state), 8);
+    assert.equal(state.pact, file);
+    assert.equal(state.baseline, baselineResult);
+    const { order, product } = state.comparison;
+    assert.equal(order.passed, orderPasses);
+    assert.equal(product.passed, productPasses);
+    assert.equal(order.actual.status, status);
+    assert.equal(product.actual.body.available, units > 0);
+    if (version === 'rename') {
+      assert.deepEqual(Array.from(order.issues), ['缺少 stock。']);
+      assert.equal(order.actual.body.quantity, units);
+    }
+    const map = contract.stage(state);
+    verifyPaths(map);
+    assert.equal(map.nodes.length, 5);
+    assert.deepEqual(Array.from(map.manualBatch.requests, r => r.path.join('/')),
+      ['broker/verifier', 'verifier/inventory', 'verifier/inventory', 'verifier/broker']);
+    assert.deepEqual(Array.from(map.manualBatch.requests, r => r.channel), ['control', 'request', 'request', 'control']);
+    assert.equal(map.manualBatch.requests.filter(r => r.tones[0] === 'stop').length, Number(!orderPasses) + Number(!productPasses));
+    assert.equal(state.broker.results.original, originalReport);
+    const reports = state.broker.results[version];
+    assert.deepEqual(Array.from(reports, row => row.passed), [orderPasses, productPasses]);
+    assert.deepEqual(Array.from(reports, row => row.consumerVersion), [contract.consumerBuilds.order, contract.consumerBuilds.product]);
+    assert.ok(reports.every(row => row.providerVersion === contract.inventoryBuilds[version]));
+  }
+
+  // Provider verification reads the fetched snapshot, independently of later changes to either copy.
+  const isolated = contract.init(sku);
+  advance(contract, isolated, 3);
+  interaction.request.body.sku = 'UNKNOWN';
+  isolated.broker.publications.order.file = JSON.stringify(pact);
+  advance(contract, isolated);
+  isolated.broker.publications.order.file = file;
+  advance(contract, isolated, 2);
+  assert.equal(isolated.baseline.request.body.sku, 'UNKNOWN');
+  assert.equal(isolated.baseline.actual.status, 404);
+  assert.equal(isolated.baseline.passed, false);
+  assert.equal(isolated.broker.results.original[0].passed, false);
+  assert.equal(Object.keys(state.broker.results).length, 5, '重放同一版本不重复计数');
+  assert.deepEqual(Object.keys(state.broker.publications).sort(), ['order', 'product']);
 }
-// Each consumer can replay its own request. Switching the viewed contract must switch the receipt too.
-const editedContract = contract.init();
-change(contract, editedContract, 'contract-yaml', editedContract.drafts.order.replace('SKU-042', 'SKU-007'));
-change(contract, editedContract, 'contract-run');
-assert.equal(contract.responsePreview(editedContract).actual.body.stock, 0);
-change(contract, editedContract, 'contract-doc', 'product');
-assert.equal(contract.responsePreview(editedContract).actual.body.stock, 12);
-// Both editors are on screen. Edits and restores target their own file even when the other response is selected.
-const productYaml = editedContract.drafts.product;
-const orderYaml = editedContract.drafts.order;
-change(contract, editedContract, 'contract-doc', 'order');
-change(contract, editedContract, 'contract-yaml', { id: 'product', yaml: 'invalid' });
-assert.ok(editedContract.errors.product);
-assert.equal(editedContract.tab, 'product');
-assert.equal(editedContract.drafts.order, orderYaml);
-change(contract, editedContract, 'contract-doc', 'order');
-change(contract, editedContract, 'contract-restore', { id: 'product' });
-assert.equal(editedContract.drafts.product, productYaml);
-assert.equal(editedContract.errors.product, undefined);
-assert.equal(editedContract.drafts.order, orderYaml);
-change(contract, editedContract, 'contract-mode', 'provider');
-change(contract, editedContract, 'contract-version', 'rename');
-change(contract, editedContract, 'contract-run');
-assert.equal(editedContract.providerChecks.shared.status, 'fail');
-assert.equal(editedContract.consumerChecks.order.status, 'blocked');
-assert.equal(editedContract.consumerChecks.product.status, 'blocked');
-assert.equal(contract.responsePreview(editedContract).actual, editedContract.providerChecks.shared.actual);
 const mesh = scenes.mesh.init();
 assert.equal(mesh.rate, 50);
 advance(scenes.mesh, mesh);

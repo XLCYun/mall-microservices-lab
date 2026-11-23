@@ -567,9 +567,8 @@
 
     const many = products.length >= 4;
     if (bench) {
-      // Separate consumer/Stub and verifier/provider pairs without taking space from the editors.
-      const columns = count === 4 ? [0.065, 0.355, 0.645, 0.935] : [0.10, 0.50, 0.90];
-      nodes.forEach((node, i) => at(node, columns[i], i % 2 ? 0.25 : 0.78));
+      const inset = count === 3 ? 0.10 : 0.065;
+      nodes.forEach((node, i) => at(node, mix(inset, 1 - inset, i / Math.max(1, count - 1)), i % 2 ? 0.25 : 0.78));
     } else if (scene === 'gateway' && find('inventory') && find('review')) {
       place('client', 0.055, 0.56); place('gateway', 0.42, 0.48);
       at(products[0], 0.77, 0.025); place('inventory', 0.91, 0.48); place('review', 0.77, 0.95);
@@ -873,9 +872,12 @@
     const a = portPosition(start);
     const b = portPosition(finish);
     if (geometry.bench) {
-      // A shallow path leaves room above the machines' ports for the full bounce.
-      const y = Math.min(a[1], b[1]) - 9 * geometry.unit;
-      return [a, [a[0] + (a[1] - y) / slope, y], [b[0] - (b[1] - y) / slope, y], b];
+      const direction = Math.sign(b[0] - a[0]) || 1;
+      // The provider's results travel back to the Broker in a separate lane from the fetched pact.
+      const returning = kind === 'control' && direction < 0;
+      const y = returning ? Math.max(a[1], b[1]) + 8 * geometry.unit : Math.min(a[1], b[1]) - 9 * geometry.unit;
+      return [a, [a[0] + direction * Math.abs(a[1] - y) / slope, y],
+        [b[0] - direction * Math.abs(b[1] - y) / slope, y], b];
     }
     if (geometry.scene === 'gateway' && start.node.role === 'gateway' && finish.node.role === 'product') {
       // Fan out from the gate in screen-depth order. Two independently chosen
@@ -1023,7 +1025,7 @@
         active ? (control ? 0.8 : 0.84 + 0.14 * weight) : (kind === 'blocked' ? 0.64 : 0.49)),
         (active ? (control ? 1.1 : 0.9 + weight * 0.66) : 0.8) * u);
       ctx.setLineDash([]);
-      if (geometry.scene === 'registry' && control && route.length > 20 * u) {
+      if (control && (geometry.scene === 'registry' || (geometry.scene === 'contract' && active)) && route.length > 20 * u) {
         const t = route.from.node.role === 'product' && route.from.registryColumn ? 0.32 : 0.5;
         const [x, y] = along(route, t);
         const [nextX, nextY] = along(route, t + 0.012);

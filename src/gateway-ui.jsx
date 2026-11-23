@@ -167,13 +167,14 @@ function PlaybackIcon({ name }) {
   return <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: window.Lab.ui.icon(name, 16) }} />;
 }
 
-function Player({ playing, speed, timeText, onShell, onSpeed }) {
+function Player({ playing, completed, speed, timeText, onShell, onSpeed }) {
   return (
     <>
       <div className="transport-actions">
         <button
           type="button"
           id="play-button"
+          disabled={completed && !playing}
           className="play-button"
           data-shell="play"
           aria-label={playing ? '暂停模拟' : '运行模拟'}
@@ -186,6 +187,7 @@ function Player({ playing, speed, timeText, onShell, onSpeed }) {
           type="button"
           className="transport-button"
           data-shell="step"
+          disabled={completed}
           aria-label="单步"
           onClick={() => onShell('step')}
         >
@@ -225,12 +227,12 @@ const testingViews = {
   contract: { Overview: ContractOverview, Workspace: ContractWorkspace }
 };
 
-function SimulationControls({ inline, side, sceneId, state, overviewHost, workbenchHost, playing, speed, timeText, onAction, onShell, onSpeed }) {
+function SimulationControls({ inline, side, sceneId, state, overviewHost, workbenchHost, playing, completed, speed, timeText, onAction, onShell, onSpeed }) {
   const view = testingViews[sceneId];
   return (
     <>
-      <Player playing={playing} speed={speed} timeText={timeText} onShell={onShell} onSpeed={onSpeed} />
-      {view && createPortal(<view.Overview state={state} onAction={onAction} />, overviewHost)}
+      <Player playing={playing} completed={completed} speed={speed} timeText={timeText} onShell={onShell} onSpeed={onSpeed} />
+      {view && createPortal(<view.Overview state={state} onAction={onAction} onShell={onShell} playing={playing} />, overviewHost)}
       {view && createPortal(<view.Workspace state={state} onAction={onAction} />, workbenchHost)}
       {sceneId === 'gateway' && inline && createPortal(
         <GatewayLimit value={state.limit} onAction={onAction} />, inline, 'gateway-limit'
